@@ -1,0 +1,6 @@
+openclaw/
+mentalOS-prototype/target/
+mentalOS-prototype/.env
+mentalOS-prototype/.env.*
+*.log
+.DS_Store

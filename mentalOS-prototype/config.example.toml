@@ -1,0 +1,24 @@
+# mentalOS configuration (example)
+# Copy to ~/.config/mentalOS/config.toml and fill in as needed.
+
+[ai]
+# Provider options: "openclaw", "ollama"
+provider = "openclaw"
+# Default model name used by the active provider.
+model = "phi3:mini"
+
+[openclaw]
+# OpenClaw Gateway endpoint
+endpoint = "http://127.0.0.1:18789"
+# Optional auth token if configured in OpenClaw
+token = ""
+
+[ollama]
+# Ollama API endpoint
+endpoint = "http://127.0.0.1:11434"
+# Local model name
+model = "phi3:mini"
+
+[paths]
+# Where mentalOS stores projects and memory
+workspace_dir = "~/workspaces"

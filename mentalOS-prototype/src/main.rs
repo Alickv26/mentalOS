@@ -1,3 +1,14 @@
 fn main() {
-    println!("mentalOS prototype: Phase 0 skeleton");
+    env_logger::init();
+    match mentalOS::Config::load() {
+        Ok(config) => {
+            println!(
+                "mentalOS prototype: config loaded. Provider={}, model={}",
+                config.ai.provider, config.ai.model
+            );
+        }
+        Err(err) => {
+            eprintln!("mentalOS prototype: config not loaded: {err}");
+        }
+    }
 }

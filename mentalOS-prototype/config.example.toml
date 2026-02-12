@@ -6,12 +6,26 @@
 provider = "openclaw"
 # Default model name used by the active provider.
 model = "phi3:mini"
+# Fallback to Ollama if OpenClaw fails.
+fallback_to_ollama = true
+# Number of recent messages to include as context.
+context_messages = 20
 
 [openclaw]
 # OpenClaw Gateway endpoint
 endpoint = "http://127.0.0.1:18789"
+# HTTP request path (used when transport = "http")
+request_path = "/agent"
+# Transport options: "cli" or "http"
+transport = "cli"
 # Optional auth token if configured in OpenClaw
 token = ""
+# CLI path (used when transport = "cli")
+cli_path = "openclaw"
+# Optional CLI args (defaults to ["agent"] if empty)
+cli_args = ["agent", "--thinking", "low"]
+# Auto-start gateway if not running (HTTP transport only)
+auto_start = false
 
 [ollama]
 # Ollama API endpoint

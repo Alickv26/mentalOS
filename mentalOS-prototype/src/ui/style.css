@@ -1,0 +1,243 @@
+/* mentalOS Dark Theme */
+
+/* ─── Global ─────────────────────────────────── */
+window {
+    background-color: #1a1b26;
+    color: #c0caf5;
+}
+
+/* ─── App Bar ────────────────────────────────── */
+.app-bar {
+    background-color: #16161e;
+    padding: 6px 12px;
+    border-bottom: 1px solid #292e42;
+}
+
+.app-bar-title {
+    font-weight: bold;
+    font-size: 14px;
+    color: #7aa2f7;
+}
+
+.app-bar-status {
+    font-size: 12px;
+    color: #9ece6a;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background-color: rgba(158, 206, 106, 0.15);
+}
+
+.app-bar-stats {
+    font-size: 11px;
+    color: #565f89;
+}
+
+.stop-button {
+    background-color: #f7768e;
+    color: #1a1b26;
+    font-weight: bold;
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    border: none;
+}
+
+.stop-button:hover {
+    background-color: #ff9e64;
+}
+
+/* ─── Chat View ──────────────────────────────── */
+.chat-view {
+    background-color: #1a1b26;
+    padding: 8px;
+}
+
+.message-row {
+    padding: 8px 12px;
+    margin: 4px 0;
+    border-radius: 8px;
+}
+
+.user-message {
+    background-color: #292e42;
+    border-left: 3px solid #7aa2f7;
+}
+
+.ai-message {
+    background-color: #1e2030;
+    border-left: 3px solid #9ece6a;
+}
+
+.system-message {
+    background-color: transparent;
+    color: #565f89;
+    font-style: italic;
+}
+
+.message-role {
+    font-size: 11px;
+    font-weight: bold;
+    margin-bottom: 2px;
+}
+
+.message-role-user {
+    color: #7aa2f7;
+}
+
+.message-role-ai {
+    color: #9ece6a;
+}
+
+.message-content {
+    font-size: 13px;
+    color: #c0caf5;
+}
+
+.code-block {
+    font-family: monospace;
+    background-color: #16161e;
+    padding: 8px;
+    border-radius: 4px;
+    color: #a9b1d6;
+}
+
+/* ─── Input Bar ──────────────────────────────── */
+.input-bar {
+    background-color: #16161e;
+    padding: 8px 12px;
+    border-top: 1px solid #292e42;
+}
+
+.input-entry {
+    background-color: #292e42;
+    color: #c0caf5;
+    border: 1px solid #3b4261;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    caret-color: #7aa2f7;
+}
+
+.input-entry:focus {
+    border-color: #7aa2f7;
+}
+
+.apps-button {
+    background-color: #292e42;
+    color: #7aa2f7;
+    font-size: 12px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid #3b4261;
+}
+
+.apps-button:hover {
+    background-color: #3b4261;
+}
+
+/* ─── Approval Dialog ────────────────────────── */
+.approval-dialog {
+    background-color: #1a1b26;
+    padding: 20px;
+}
+
+.approval-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: #ff9e64;
+}
+
+.approval-command {
+    font-family: monospace;
+    background-color: #16161e;
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid #292e42;
+    color: #c0caf5;
+    font-size: 13px;
+}
+
+.approve-button {
+    background-color: #9ece6a;
+    color: #1a1b26;
+    font-weight: bold;
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: none;
+}
+
+.approve-button:hover {
+    background-color: #73daca;
+}
+
+.deny-button {
+    background-color: #f7768e;
+    color: #1a1b26;
+    font-weight: bold;
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: none;
+}
+
+.deny-button:hover {
+    background-color: #ff9e64;
+}
+
+.approve-similar-button {
+    background-color: #7aa2f7;
+    color: #1a1b26;
+    font-weight: bold;
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: none;
+}
+
+.approve-similar-button:hover {
+    background-color: #7dcfff;
+}
+
+/* ─── App Launcher ───────────────────────────── */
+.launcher-window {
+    background-color: #1a1b26;
+}
+
+.launcher-search {
+    background-color: #292e42;
+    color: #c0caf5;
+    border: 1px solid #3b4261;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 8px;
+    font-size: 13px;
+}
+
+.launcher-search:focus {
+    border-color: #7aa2f7;
+}
+
+.launcher-list {
+    background-color: #1a1b26;
+}
+
+.launcher-item {
+    padding: 8px 12px;
+    color: #c0caf5;
+    font-size: 13px;
+    border-radius: 4px;
+}
+
+.launcher-item:hover {
+    background-color: #292e42;
+}
+
+/* ─── Welcome / Empty State ──────────────────── */
+.welcome-label {
+    font-size: 20px;
+    font-weight: bold;
+    color: #565f89;
+}
+
+.welcome-hint {
+    font-size: 13px;
+    color: #3b4261;
+}

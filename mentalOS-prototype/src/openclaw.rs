@@ -19,6 +19,9 @@ pub enum Transport {
 /// let config = mentalOS::Config::load().unwrap();
 /// let client = mentalOS::openclaw::OpenClawClient::from_config(&config);
 /// ```
+use std::collections::HashMap;
+use crate::config::AgentConfig;
+
 pub struct OpenClawClient {
     transport: Transport,
     endpoint: String,
@@ -32,6 +35,7 @@ pub struct OpenClawClient {
     fallback_to_ollama: bool,
     provider: String,
     http: reqwest::Client,
+    agents: HashMap<String, AgentConfig>,
 }
 
 #[derive(Debug, Serialize)]
@@ -86,7 +90,46 @@ impl OpenClawClient {
             fallback_to_ollama: config.ai.fallback_to_ollama,
             provider: config.ai.provider.clone(),
             http: reqwest::Client::new(),
+            agents: config.agents.clone(),
         }
+    }
+
+    pub fn list_agents(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.agents.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    pub fn get_current_provider(&self) -> &str {
+        &self.provider
+    }
+
+    pub fn switch_agent(&mut self, name: &str) -> Result<String> {
+        let name_key = self.agents.keys()
+            .find(|k| k.eq_ignore_ascii_case(name))
+            .ok_or_else(|| MentalOSError::Other(format!("Agent '{}' not found", name)))?
+            .clone();
+
+        let agent = self.agents.get(&name_key).unwrap().clone();
+        
+        self.provider = agent.provider.clone();
+        
+        if let Some(model) = agent.model {
+            self.ollama_model = model; // Assuming model is for ollama or openclaw
+        }
+        
+        if let Some(endpoint) = agent.endpoint {
+            if self.provider == "ollama" {
+                self.ollama_endpoint = endpoint;
+            } else {
+                self.endpoint = endpoint;
+            }
+        }
+
+        // Also update transport/cli_path if provided, but struct fields are simple here
+        // Ideally we map AgentConfig fields back to OpenClawClient fields
+        
+        Ok(format!("Switched to agent: {}", agent.name))
     }
 
     pub async fn send_message(&self, message: &str, context: &[Message]) -> Result<String> {
@@ -266,6 +309,7 @@ mod tests {
             },
             ollama: OllamaConfig::default(),
             paths: PathsConfig::default(),
+            agents: std::collections::HashMap::new(),
         }
     }
 

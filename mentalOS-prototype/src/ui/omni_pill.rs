@@ -1,5 +1,5 @@
 use gtk4::prelude::*;
-use gtk4::{Box, Button, Entry, Label, Orientation, Spinner};
+use gtk4::{Box, Button, DropDown, Entry, Label, Orientation, Spinner, StringList};
 
 /// The visual state of the AI Agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +37,7 @@ pub struct OmniPill {
     pub spinner: Spinner,
     pub apps_btn: Button,
     pub term_btn: Button,
+    pub agent_selector: DropDown,
     status_icon: Label,
     stop_btn: Button,
 }
@@ -56,6 +57,14 @@ impl OmniPill {
         spinner.add_css_class("spinner");
         spinner.set_visible(false);
         container.append(&spinner);
+
+        // Agent Selector (Dropdown)
+        let model = StringList::new(&["Loading..."]);
+        let agent_selector = DropDown::builder()
+            .model(&model)
+            .build();
+        agent_selector.add_css_class("agent-selector");
+        container.append(&agent_selector);
 
         // Text Input (center)
         let input = Entry::builder()
@@ -90,6 +99,7 @@ impl OmniPill {
             spinner,
             apps_btn,
             term_btn,
+            agent_selector,
             status_icon,
             stop_btn,
         }

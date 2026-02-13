@@ -15,7 +15,12 @@ pub enum BackendRequest {
     /// Or better, the backend pauses? 
     /// Simple approach: The backend returns "NeedsApproval(cmd)".
     /// If UI approves, UI sends "Execute(cmd)".
+    /// Execute a command (user approved).
     ExecuteCommand(String),
+    /// Request the list of available agents.
+    GetAgents,
+    /// Request to switch the active agent.
+    SwitchAgent(String),
 }
 
 /// Responses sent from the Backend to the UI.
@@ -29,4 +34,11 @@ pub enum BackendResponse {
     ApprovalRequired(String),
     /// An error occurred.
     Error(String),
+    /// The list of available agents and the currently active one.
+    AgentList {
+        agents: Vec<String>,
+        current: String,
+    },
+    /// Confirmation that the agent was switched.
+    AgentSwitched(String),
 }

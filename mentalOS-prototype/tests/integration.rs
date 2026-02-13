@@ -54,6 +54,7 @@ async fn components_work_together() {
         },
         ollama: OllamaConfig::default(),
         paths: PathsConfig::default(),
+        agents: std::collections::HashMap::new(),
     };
     config.openclaw.endpoint = server.base_url();
     config.ai.fallback_to_ollama = false;

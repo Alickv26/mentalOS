@@ -39,19 +39,39 @@ impl CommandExecutor for FirejailExecutor {
             .split_first()
             .ok_or_else(|| MentalOSError::InvalidCommand("Empty command".into()))?;
 
-        let output = Command::new("firejail")
-            .arg("--quiet")
-            .arg("--")
-            .arg(program)
-            .args(args)
-            .output()
-            .map_err(|err| {
-                if err.kind() == std::io::ErrorKind::NotFound {
-                    MentalOSError::CommandFailed("firejail not found in PATH".into())
-                } else {
-                    MentalOSError::Io(err)
-                }
-            })?;
+        // Determine profile path
+        // Check local directory first, then standard paths
+        let profile_arg = if std::path::Path::new("firejail/openclaw.profile").exists() {
+            Some("--profile=firejail/openclaw.profile".to_string())
+        } else if std::path::Path::new("/etc/firejail/openclaw.profile").exists() {
+            Some("--profile=openclaw".to_string())
+        } else {
+            None
+        };
+
+        let mut cmd = Command::new("firejail");
+        cmd.arg("--quiet");
+        if let Some(profile) = profile_arg {
+            cmd.arg(profile);
+        } else {
+            // Warn if running without specific profile?
+            // For now, just run with default firejail restrictions
+        }
+        
+        // Prevent X11/GUI access if possible (headless)
+        cmd.arg("--x11=none");
+
+        cmd.arg("--");
+        cmd.arg(program);
+        cmd.args(args);
+
+        let output = cmd.output().map_err(|err| {
+            if err.kind() == std::io::ErrorKind::NotFound {
+                MentalOSError::CommandFailed("firejail not found in PATH".into())
+            } else {
+                MentalOSError::Io(err)
+            }
+        })?;
 
         Ok(CommandOutput {
             command: command.to_string(),
@@ -99,6 +119,18 @@ impl<E: CommandExecutor> CommandRouter<E> {
         }
     }
 
+    pub fn list_agents(&self) -> Vec<String> {
+        self.openclaw.list_agents()
+    }
+
+    pub fn get_current_provider(&self) -> String {
+        self.openclaw.get_current_provider().to_string()
+    }
+
+    pub fn switch_agent(&mut self, name: &str) -> Result<String> {
+        self.openclaw.switch_agent(name)
+    }
+
     pub async fn handle_input(
         &mut self,
         workspace: &str,
@@ -106,6 +138,34 @@ impl<E: CommandExecutor> CommandRouter<E> {
         input: &str,
         context_limit: usize,
     ) -> Result<RouterResponse> {
+        // Intercept agent switching commands
+        let switch_regex = Regex::new(r"(?i)^switch\s+(?:agent\s+)?to\s+(.+)$").unwrap();
+        if let Some(caps) = switch_regex.captures(input) {
+            let target = caps.get(1).unwrap().as_str().trim();
+            match self.openclaw.switch_agent(target) {
+                Ok(msg) => {
+                    return Ok(RouterResponse {
+                        message: msg,
+                        outputs: Vec::new(),
+                        approvals_required: Vec::new(),
+                    });
+                }
+                Err(_) => {
+                    let agents = self.openclaw.list_agents();
+                    let msg = format!(
+                        "Agent '{}' not found. Available agents: {}", 
+                        target, 
+                        agents.join(", ")
+                    );
+                    return Ok(RouterResponse {
+                        message: msg,
+                        outputs: Vec::new(),
+                        approvals_required: Vec::new(),
+                    });
+                }
+            }
+        }
+
         {
             let memory = self
                 .memory
@@ -289,6 +349,7 @@ mod tests {
             },
             ollama: OllamaConfig::default(),
             paths: PathsConfig::default(),
+            agents: std::collections::HashMap::new(),
         }
     }
 

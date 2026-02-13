@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 /// let config = mentalOS::Config::load().unwrap();
 /// println!("provider={}", config.ai.provider);
 /// ```
+use std::collections::HashMap;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -21,12 +23,26 @@ pub struct Config {
     pub ollama: OllamaConfig,
     #[serde(default)]
     pub paths: PathsConfig,
+    #[serde(default)]
+    pub agents: HashMap<String, AgentConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConfig {
+    pub name: String,
+    pub description: Option<String>,
+    pub provider: String, // "openclaw", "ollama", "claude", etc.
+    pub model: Option<String>,
+    pub endpoint: Option<String>,
+    pub executable: Option<String>,     // For local agents like OpenCode
+    pub arguments: Option<Vec<String>>, // CLI args
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiConfig {
     #[serde(default = "default_provider")]
     pub provider: String,
+    // ... items from original ...
     #[serde(default = "default_model")]
     pub model: String,
     #[serde(default = "default_fallback_to_ollama")]
@@ -116,6 +132,7 @@ impl Default for Config {
             openclaw: OpenClawConfig::default(),
             ollama: OllamaConfig::default(),
             paths: PathsConfig::default(),
+            agents: HashMap::new(),
         }
     }
 }

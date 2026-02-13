@@ -108,6 +108,23 @@ fn main() {
                              }
                          }
                     }
+                    BackendRequest::GetAgents => {
+                        let agents = router.list_agents();
+                        let current = router.get_current_provider();
+                        let _ = ui_tx.send(BackendResponse::AgentList { agents, current });
+                    }
+                    BackendRequest::SwitchAgent(name) => {
+                        log::info!("Switching agent to: {}", name);
+                        match router.switch_agent(&name) {
+                            Ok(msg) => {
+                                let _ = ui_tx.send(BackendResponse::AgentSwitched(name));
+                                let _ = ui_tx.send(BackendResponse::Chat(msg));
+                            }
+                            Err(e) => {
+                                let _ = ui_tx.send(BackendResponse::Error(e.to_string()));
+                            }
+                        }
+                    }
                 }
             }
             log::info!("Backend loop ended");

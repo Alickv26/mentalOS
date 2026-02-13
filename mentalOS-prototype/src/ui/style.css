@@ -133,3 +133,11 @@ window {
     color: #7aa2f7;
     margin-right: 8px;
 }
+
+.agent-selector {
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+    margin-right: 8px;
+    min-width: 100px;
+}

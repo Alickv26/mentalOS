@@ -19,7 +19,7 @@ request_path = "/agent"
 # Transport options: "cli" or "http"
 transport = "cli"
 # Optional auth token if configured in OpenClaw
-token = ""
+token = "mentalos-dev-token"
 # CLI path (used when transport = "cli")
 cli_path = "openclaw"
 # Optional CLI args (defaults to ["agent"] if empty)

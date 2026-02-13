@@ -4,3 +4,4 @@ pub mod chat_view;
 pub mod launcher;
 pub mod main_window;
 pub mod omni_pill;
+pub mod messages;

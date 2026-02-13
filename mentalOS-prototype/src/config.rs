@@ -109,6 +109,17 @@ impl Default for PathsConfig {
     }
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            ai: AiConfig::default(),
+            openclaw: OpenClawConfig::default(),
+            ollama: OllamaConfig::default(),
+            paths: PathsConfig::default(),
+        }
+    }
+}
+
 impl Config {
     pub fn load() -> Result<Self> {
         let path = config_path()?;

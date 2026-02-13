@@ -42,17 +42,21 @@ pub struct WhitelistManager {
 }
 
 impl WhitelistManager {
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            data: Whitelist {
+                version: 1,
+                exact: Vec::new(),
+                patterns: Vec::new(),
+                temporary: Vec::new(),
+            },
+        }
+    }
+
     pub fn load(path: PathBuf) -> Result<Self> {
         if !path.exists() {
-            return Ok(Self {
-                path,
-                data: Whitelist {
-                    version: 1,
-                    exact: Vec::new(),
-                    patterns: Vec::new(),
-                    temporary: Vec::new(),
-                },
-            });
+            return Ok(Self::new(path));
         }
 
         let contents = fs::read_to_string(&path)?;

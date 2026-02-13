@@ -1,44 +1,52 @@
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, Box, Orientation};
-use log::info;
+use log::{error, info};
+use std::rc::Rc;
+use tokio::sync::mpsc::Sender;
 
+use crate::ui::approval::{ApprovalDialog, ApprovalDecision};
 use crate::ui::chat_view::{ChatView, MessageRole};
 use crate::ui::launcher::AppLauncher;
+use crate::ui::messages::{BackendRequest, BackendResponse};
 use crate::ui::omni_pill::{AiState, OmniPill};
-use std::rc::Rc;
 
 /// The main mentalOS overlay window.
 pub struct MainWindow {
     pub window: ApplicationWindow,
-    // We don't need to store the components in the struct for this prototype
-    // as long as they are attached to the window hierarchy.
 }
 
 impl MainWindow {
-    pub fn new(app: &Application) -> Self {
+    pub fn new(
+        app: &Application,
+        backend_tx: Sender<BackendRequest>,
+    ) -> (Self, glib::Sender<BackendResponse>) {
         let window = ApplicationWindow::builder()
             .application(app)
             .title("mentalOS AIUI")
             .default_width(600)
-            .default_height(80) 
-            .decorated(false) // Frameless
+            .default_height(120) // Increased for margins
+            .decorated(false)
             .resizable(false)
-            // .always_on_top(true) // Commented out for dev comfort, uncomment for prod
             .build();
         
-        // Transparent background for the window itself
         window.add_css_class("transparent-window");
 
         let root_container = Box::new(Orientation::Vertical, 0);
         root_container.add_css_class("omni-container");
-        root_container.add_css_class("state-sleep"); // Default state
+        root_container.add_css_class("state-sleep");
+        
+        // Add margins to prevent shadow clipping
+        root_container.set_margin_top(24);
+        root_container.set_margin_bottom(24);
+        root_container.set_margin_start(24);
+        root_container.set_margin_end(24);
 
         // ── Omni Pill (Input) ──
         let pill = OmniPill::new();
         root_container.append(&pill.container);
 
-        // ── Chat View (Hidden by default) ──
+        // ── Chat View ──
         let chat_view = ChatView::new();
         chat_view.container.set_visible(false); 
         chat_view.container.set_height_request(400); 
@@ -48,15 +56,68 @@ impl MainWindow {
 
         // ── Logic Wiring ──
 
-        // We use Rc to share access to the UI components between callbacks
-        // GTK widgets are reference counted, but our wrapper structs (OmniPill, ChatView) are not,
-        // so we wrap them in Rc to share them safely in this single-threaded environment.
         let pill = Rc::new(pill);
         let chat_view = Rc::new(chat_view);
+        let root_container = Rc::new(root_container); 
+
+        // ── Wire Buttons ──
+        let win_for_apps = window.clone();
+        pill.apps_btn.connect_clicked(move |_| {
+            AppLauncher::show(&win_for_apps);
+        });
+
+        let _pill_term_ref = pill.clone();
+        pill.term_btn.connect_clicked(move |_| {
+             // Future: Toggle Terminal View
+             info!("Terminal button clicked");
+        });
+
+        // ── Create UI Channel Here (Avoids naming Receiver type) ──
+        let (ui_tx, ui_rx) = glib::MainContext::channel(glib::Priority::DEFAULT);
+
+        // ── Handle Incoming Backend Messages ──
+        let chat_ref = chat_view.clone();
+        let pill_ref = pill.clone();
+        let root_ref = root_container.clone();
+        let win_ref = window.clone();
+        let backend_tx_clone = backend_tx.clone();
+
+        ui_rx.attach(None, move |msg| {
+            match msg {
+                BackendResponse::Chat(text) => {
+                    chat_ref.append_message(MessageRole::Ai, &text);
+                    set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+                }
+                BackendResponse::CommandResult(output) => {
+                    let text = format!("Executed: `{}`\nExit Code: {}\nOutput:\n```\n{}\n```", output.command, output.exit_code, output.stdout);
+                    chat_ref.append_message(MessageRole::System, &text);
+                    set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+                }
+                BackendResponse::ApprovalRequired(cmd) => {
+                    set_visual_state(&root_ref, &pill_ref, AiState::Learn); 
+                    let tx = backend_tx_clone.clone();
+                    let cmd_clone = cmd.clone();
+                    ApprovalDialog::show(&win_ref, &cmd, move |decision| {
+                         match decision {
+                             ApprovalDecision::ApproveOnce => {
+                                 let _ = tx.blocking_send(BackendRequest::ExecuteCommand(cmd_clone.clone()));
+                             }
+                             _ => {
+                                 info!("Command denied: {}", cmd_clone);
+                             }
+                         }
+                    });
+                }
+                BackendResponse::Error(err) => {
+                    chat_ref.append_message(MessageRole::System, &format!("Error: {}", err));
+                    set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+                }
+            }
+            glib::ControlFlow::Continue
+        });
         
-        // Input submit (Enter key)
+        // ── Input submit (Enter key) ──
         let pill_input = pill.input.clone();
-        
         let chat_ref = chat_view.clone();
         let root_ref = root_container.clone();
         let win_ref = window.clone();
@@ -68,58 +129,35 @@ impl MainWindow {
                 return;
             }
             entry.set_text("");
-            info!("User input: {text}");
-
-            // Expand UI
-            chat_ref.container.set_visible(true);
-            win_ref.set_default_height(500); // Expand window
             
-            // Set State: Active (Thinking)
+            chat_ref.container.set_visible(true);
+            win_ref.set_default_height(500); 
             set_visual_state(&root_ref, &pill_ref, AiState::Active);
-
-            // Append user message
             chat_ref.append_message(MessageRole::User, &text);
 
-            // Mock Mock Mock
-            let chat_clone = chat_ref.clone();
-            let root_clone = root_ref.clone();
-            let pill_clone = pill_ref.clone();
+            let req = BackendRequest::Input {
+                text,
+                workspace: "default".into(),
+                category: "general".into(),
+            };
             
-            glib::timeout_add_local_once(std::time::Duration::from_millis(800), move || {
-                let response = generate_mock_response(&text);
-                
-                // If it's a "create/agent" command, simulate Agentic state
-                if text.to_lowercase().contains("create") || text.to_lowercase().contains("agent") {
-                     set_visual_state(&root_clone, &pill_clone, AiState::Agentic);
-                     
-                     // Simulate agent working then finishing
-                     let chat_final = chat_clone.clone();
-                     let root_final = root_clone.clone();
-                     let pill_final = pill_clone.clone();
-                     glib::timeout_add_local_once(std::time::Duration::from_secs(3), move || {
-                          chat_final.append_message(MessageRole::Ai, &response);
-                          set_visual_state(&root_final, &pill_final, AiState::Sleep);
-                     });
-                } else {
-                    chat_clone.append_message(MessageRole::Ai, &response);
-                    set_visual_state(&root_clone, &pill_clone, AiState::Sleep);
-                }
-            });
+            if let Err(e) = backend_tx.blocking_send(req) {
+                error!("Failed to send to backend: {}", e);
+                chat_ref.append_message(MessageRole::System, "Error: Backend unreachable");
+                set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+            }
         });
 
-        // Close/Collapse logic (Esc)
+        // Shortcuts
         let key_ctrl = gtk4::EventControllerKey::new();
         let win_for_keys = window.clone();
         key_ctrl.connect_key_pressed(move |_, key, _, modifiers| {
              let ctrl = modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
-             
              if ctrl && key == gtk4::gdk::Key::k {
                 AppLauncher::show(&win_for_keys);
                 return glib::Propagation::Stop;
              }
-             
              if key == gtk4::gdk::Key::Escape {
-                 // Minimal collapse logic for prototype
                  win_for_keys.close();
                  return glib::Propagation::Stop;
              }
@@ -127,38 +165,17 @@ impl MainWindow {
         });
         window.add_controller(key_ctrl);
 
-        // Focus input
         pill.input.grab_focus();
 
-        Self {
-            window,
-        }
+        (Self { window }, ui_tx)
     }
 }
 
-// ── State Management Helper ──
-
 fn set_visual_state(container: &Box, pill_ui: &OmniPill, state: AiState) {
-    // Remove all state classes
     container.remove_css_class("state-sleep");
     container.remove_css_class("state-active");
     container.remove_css_class("state-agentic");
     container.remove_css_class("state-learn");
-
-    // Add new state class
     container.add_css_class(state.css_class());
-    
-    // Update Icon
     pill_ui.set_state(state);
-}
-
-fn generate_mock_response(user_input: &str) -> String {
-    let lower = user_input.to_lowercase();
-    if lower.contains("create") {
-         return "I'm generating that project for you now...\n```bash\ncargo new mental-os-v2\n```".to_string();
-    }
-    if lower.contains("hello") {
-        return "Hello! I am ready.".to_string();
-    }
-    format!("I heard: \"{}\"", user_input)
 }

@@ -1,62 +1,68 @@
 use gtk4::glib;
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, Box, Button, Entry, Orientation};
+use gtk4::{Application, ApplicationWindow, Box, Orientation};
 use log::info;
 
-use crate::ui::app_bar::AppBar;
 use crate::ui::chat_view::{ChatView, MessageRole};
 use crate::ui::launcher::AppLauncher;
+use crate::ui::omni_pill::{AiState, OmniPill};
+use std::rc::Rc;
 
-/// The main mentalOS window that assembles all UI components.
+/// The main mentalOS overlay window.
 pub struct MainWindow {
     pub window: ApplicationWindow,
+    // We don't need to store the components in the struct for this prototype
+    // as long as they are attached to the window hierarchy.
 }
 
 impl MainWindow {
     pub fn new(app: &Application) -> Self {
         let window = ApplicationWindow::builder()
             .application(app)
-            .title("mentalOS")
-            .default_width(800)
-            .default_height(600)
+            .title("mentalOS AIUI")
+            .default_width(600)
+            .default_height(80) 
+            .decorated(false) // Frameless
+            .resizable(false)
+            // .always_on_top(true) // Commented out for dev comfort, uncomment for prod
             .build();
+        
+        // Transparent background for the window itself
+        window.add_css_class("transparent-window");
 
-        let root = Box::new(Orientation::Vertical, 0);
+        let root_container = Box::new(Orientation::Vertical, 0);
+        root_container.add_css_class("omni-container");
+        root_container.add_css_class("state-sleep"); // Default state
 
-        // ── App Bar ──
-        let app_bar = AppBar::new();
-        root.append(&app_bar.container);
+        // ── Omni Pill (Input) ──
+        let pill = OmniPill::new();
+        root_container.append(&pill.container);
 
-        // ── Chat View ──
+        // ── Chat View (Hidden by default) ──
         let chat_view = ChatView::new();
-        root.append(&chat_view.container);
+        chat_view.container.set_visible(false); 
+        chat_view.container.set_height_request(400); 
+        root_container.append(&chat_view.container);
 
-        // ── Input Bar ──
-        let input_bar = Box::new(Orientation::Horizontal, 8);
-        input_bar.add_css_class("input-bar");
+        window.set_child(Some(&root_container));
 
-        let input = Entry::builder()
-            .placeholder_text("Ask mentalOS anything...")
-            .hexpand(true)
-            .build();
-        input.add_css_class("input-entry");
-        input_bar.append(&input);
+        // ── Logic Wiring ──
 
-        let apps_btn = Button::with_label("All Apps");
-        apps_btn.add_css_class("apps-button");
-        input_bar.append(&apps_btn);
+        // We use Rc to share access to the UI components between callbacks
+        // GTK widgets are reference counted, but our wrapper structs (OmniPill, ChatView) are not,
+        // so we wrap them in Rc to share them safely in this single-threaded environment.
+        let pill = Rc::new(pill);
+        let chat_view = Rc::new(chat_view);
+        
+        // Input submit (Enter key)
+        let pill_input = pill.input.clone();
+        
+        let chat_ref = chat_view.clone();
+        let root_ref = root_container.clone();
+        let win_ref = window.clone();
+        let pill_ref = pill.clone();
 
-        root.append(&input_bar);
-
-        window.set_child(Some(&root));
-
-        // ── Input submit (Enter key) ──
-        let chat_ref = std::rc::Rc::new(chat_view);
-        let app_bar_ref = std::rc::Rc::new(app_bar);
-        let input_ref = input.clone();
-        let chat_for_enter = chat_ref.clone();
-        let bar_for_enter = app_bar_ref.clone();
-        input.connect_activate(move |entry| {
+        pill_input.connect_activate(move |entry| {
             let text = entry.text().to_string();
             if text.trim().is_empty() {
                 return;
@@ -64,103 +70,95 @@ impl MainWindow {
             entry.set_text("");
             info!("User input: {text}");
 
-            // Append user message
-            chat_for_enter.append_message(MessageRole::User, &text);
+            // Expand UI
+            chat_ref.container.set_visible(true);
+            win_ref.set_default_height(500); // Expand window
+            
+            // Set State: Active (Thinking)
+            set_visual_state(&root_ref, &pill_ref, AiState::Active);
 
-            // Mock AI response
-            bar_for_enter.set_status("Active");
-            let chat_clone = chat_for_enter.clone();
-            let bar_clone = bar_for_enter.clone();
-            glib::timeout_add_local_once(std::time::Duration::from_millis(500), move || {
+            // Append user message
+            chat_ref.append_message(MessageRole::User, &text);
+
+            // Mock Mock Mock
+            let chat_clone = chat_ref.clone();
+            let root_clone = root_ref.clone();
+            let pill_clone = pill_ref.clone();
+            
+            glib::timeout_add_local_once(std::time::Duration::from_millis(800), move || {
                 let response = generate_mock_response(&text);
-                chat_clone.append_message(MessageRole::Ai, &response);
-                bar_clone.set_status("Idle");
+                
+                // If it's a "create/agent" command, simulate Agentic state
+                if text.to_lowercase().contains("create") || text.to_lowercase().contains("agent") {
+                     set_visual_state(&root_clone, &pill_clone, AiState::Agentic);
+                     
+                     // Simulate agent working then finishing
+                     let chat_final = chat_clone.clone();
+                     let root_final = root_clone.clone();
+                     let pill_final = pill_clone.clone();
+                     glib::timeout_add_local_once(std::time::Duration::from_secs(3), move || {
+                          chat_final.append_message(MessageRole::Ai, &response);
+                          set_visual_state(&root_final, &pill_final, AiState::Sleep);
+                     });
+                } else {
+                    chat_clone.append_message(MessageRole::Ai, &response);
+                    set_visual_state(&root_clone, &pill_clone, AiState::Sleep);
+                }
             });
         });
 
-        // ── All Apps button ──
-        let win_ref = window.clone();
-        apps_btn.connect_clicked(move |_| {
-            AppLauncher::show(&win_ref);
-        });
-
-        // ── Keyboard shortcuts ──
+        // Close/Collapse logic (Esc)
         let key_ctrl = gtk4::EventControllerKey::new();
-        let input_for_keys = input_ref.clone();
         let win_for_keys = window.clone();
         key_ctrl.connect_key_pressed(move |_, key, _, modifiers| {
-            let ctrl = modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
-            let shift = modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK);
-
-            // Ctrl+L → focus input
-            if ctrl && key == gtk4::gdk::Key::l {
-                input_for_keys.grab_focus();
-                return glib::Propagation::Stop;
-            }
-            // Ctrl+Shift+Q → emergency stop
-            if ctrl && shift && key == gtk4::gdk::Key::Q {
-                info!("Emergency STOP via keyboard");
-                return glib::Propagation::Stop;
-            }
-            // Ctrl+K → open launcher
-            if ctrl && key == gtk4::gdk::Key::k {
+             let ctrl = modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
+             
+             if ctrl && key == gtk4::gdk::Key::k {
                 AppLauncher::show(&win_for_keys);
                 return glib::Propagation::Stop;
-            }
-            glib::Propagation::Proceed
+             }
+             
+             if key == gtk4::gdk::Key::Escape {
+                 // Minimal collapse logic for prototype
+                 win_for_keys.close();
+                 return glib::Propagation::Stop;
+             }
+             glib::Propagation::Proceed
         });
         window.add_controller(key_ctrl);
 
-        // Focus input on start
-        input_ref.grab_focus();
+        // Focus input
+        pill.input.grab_focus();
 
-        Self { window }
+        Self {
+            window,
+        }
     }
 }
 
-/// Generate a mock AI response for the UI shell.
+// ── State Management Helper ──
+
+fn set_visual_state(container: &Box, pill_ui: &OmniPill, state: AiState) {
+    // Remove all state classes
+    container.remove_css_class("state-sleep");
+    container.remove_css_class("state-active");
+    container.remove_css_class("state-agentic");
+    container.remove_css_class("state-learn");
+
+    // Add new state class
+    container.add_css_class(state.css_class());
+    
+    // Update Icon
+    pill_ui.set_state(state);
+}
+
 fn generate_mock_response(user_input: &str) -> String {
     let lower = user_input.to_lowercase();
-
-    if lower.contains("hello") || lower.contains("hi") {
-        return "Hello! I'm mentalOS, your second brain. How can I help you today?".to_string();
+    if lower.contains("create") {
+         return "I'm generating that project for you now...\n```bash\ncargo new mental-os-v2\n```".to_string();
     }
-
-    if lower.contains("create") || lower.contains("build") || lower.contains("make") {
-        return format!(
-            "I'd create that project for you. Here's what I would do:\n\
-            ```bash\n\
-            mkdir -p ~/workspaces/new-project\n\
-            cd ~/workspaces/new-project\n\
-            # Initialize project scaffolding\n\
-            ```\n\
-            This is a mock response — real AI integration comes in M0.4."
-        );
+    if lower.contains("hello") {
+        return "Hello! I am ready.".to_string();
     }
-
-    if lower.contains("install") {
-        return format!(
-            "⚠️  That would require running a system command:\n\
-            ```\n\
-            sudo pacman -S {}\n\
-            ```\n\
-            In the full version, you'd see an approval dialog before this executes.",
-            user_input.split_whitespace().last().unwrap_or("package")
-        );
-    }
-
-    if lower.contains("help") {
-        return "Here are some things you can try:\n\
-            • Ask me to create a project\n\
-            • Ask me to install something\n\
-            • Press Ctrl+K to open the App Launcher\n\
-            • Press Ctrl+L to focus the input field\n\
-            • Press Ctrl+Shift+Q for emergency stop"
-            .to_string();
-    }
-
-    format!(
-        "I received your message: \"{user_input}\"\n\n\
-        This is a mock response. Real AI integration (OpenClaw/Ollama) will be connected in Milestone 0.4."
-    )
+    format!("I heard: \"{}\"", user_input)
 }

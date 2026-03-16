@@ -1,7 +1,8 @@
-use crate::memory::MemoryManager;
+use crate::memory::{MemoryManager, SessionSummary};
 use gtk4::prelude::*;
-use gtk4::{Box, Label, Orientation, PolicyType, ScrolledWindow, Window};
+use gtk4::{Box, Entry, Label, Orientation, PolicyType, ScrolledWindow, Window};
 use std::path::PathBuf;
+use std::rc::Rc;
 
 pub struct MemoryBrowser;
 
@@ -27,6 +28,12 @@ impl MemoryBrowser {
         title.add_css_class("app-bar-title");
         root.append(&title);
 
+        let search = Entry::builder()
+            .placeholder_text("Search sessions...")
+            .build();
+        search.add_css_class("launcher-search");
+        root.append(&search);
+
         let summary = Label::new(None);
         summary.set_halign(gtk4::Align::Start);
         summary.add_css_class("app-bar-stats");
@@ -37,34 +44,16 @@ impl MemoryBrowser {
         let manager = MemoryManager::new(default_workspace_root());
         match manager.list_sessions(workspace) {
             Ok(sessions) if !sessions.is_empty() => {
-                summary.set_text(&format_session_summary(sessions.len()));
-                for session in sessions.into_iter().take(30) {
-                    let row = Box::new(Orientation::Vertical, 2);
-                    row.add_css_class("message-row");
-                    row.add_css_class("ai-message");
+                let sessions = Rc::new(sessions);
+                populate_sessions(&list_box, &summary, &sessions, "");
 
-                    let title_text = session
-                        .title
-                        .unwrap_or_else(|| format!("Session {}", session.session_id));
-                    let head = Label::new(Some(&title_text));
-                    head.set_halign(gtk4::Align::Start);
-                    head.set_wrap(true);
-                    head.add_css_class("message-content");
-                    row.append(&head);
-
-                    let details = format!(
-                        "category: {}   created: {}   last active: {}",
-                        session.category,
-                        session.created_at.format("%Y-%m-%d %H:%M"),
-                        session.last_active.format("%Y-%m-%d %H:%M")
-                    );
-                    let meta = Label::new(Some(&details));
-                    meta.set_halign(gtk4::Align::Start);
-                    meta.add_css_class("app-bar-stats");
-                    row.append(&meta);
-
-                    list_box.append(&row);
-                }
+                let list_ref = list_box.clone();
+                let summary_ref = summary.clone();
+                let sessions_ref = sessions.clone();
+                search.connect_changed(move |entry| {
+                    let query = entry.text().to_string();
+                    populate_sessions(&list_ref, &summary_ref, &sessions_ref, &query);
+                });
             }
             Ok(_) => {
                 summary.set_text("No sessions found");
@@ -110,13 +99,118 @@ fn format_session_summary(count: usize) -> String {
     }
 }
 
+fn format_filtered_summary(filtered: usize, total: usize) -> String {
+    if total == 0 {
+        "No sessions found".to_string()
+    } else if filtered == total {
+        format_session_summary(total)
+    } else {
+        format!("Showing {filtered} of {total} sessions")
+    }
+}
+
+fn matches_session_query(session: &SessionSummary, query_lower: &str) -> bool {
+    if query_lower.is_empty() {
+        return true;
+    }
+    let title = session.title.as_deref().unwrap_or("");
+    title.to_lowercase().contains(query_lower)
+        || session.category.to_lowercase().contains(query_lower)
+        || session.session_id.to_lowercase().contains(query_lower)
+}
+
+fn populate_sessions(list_box: &Box, summary: &Label, sessions: &[SessionSummary], query: &str) {
+    while let Some(child) = list_box.first_child() {
+        list_box.remove(&child);
+    }
+
+    let query_lower = query.to_lowercase();
+    let mut shown = 0usize;
+
+    for session in sessions.iter() {
+        if !matches_session_query(session, &query_lower) {
+            continue;
+        }
+        if shown >= 30 {
+            break;
+        }
+        shown += 1;
+
+        let row = Box::new(Orientation::Vertical, 2);
+        row.add_css_class("message-row");
+        row.add_css_class("ai-message");
+
+        let title_text = session
+            .title
+            .clone()
+            .unwrap_or_else(|| format!("Session {}", session.session_id));
+        let head = Label::new(Some(&title_text));
+        head.set_halign(gtk4::Align::Start);
+        head.set_wrap(true);
+        head.add_css_class("message-content");
+        row.append(&head);
+
+        let details = format!(
+            "category: {}   created: {}   last active: {}",
+            session.category,
+            session.created_at.format("%Y-%m-%d %H:%M"),
+            session.last_active.format("%Y-%m-%d %H:%M")
+        );
+        let meta = Label::new(Some(&details));
+        meta.set_halign(gtk4::Align::Start);
+        meta.add_css_class("app-bar-stats");
+        row.append(&meta);
+
+        list_box.append(&row);
+    }
+
+    summary.set_text(&format_filtered_summary(shown, sessions.len()));
+
+    if list_box.first_child().is_none() {
+        let message = if query.trim().is_empty() {
+            "No conversations saved yet.".to_string()
+        } else {
+            format!("No sessions found for '{query}'.")
+        };
+        let empty = Label::new(Some(&message));
+        empty.add_css_class("welcome-hint");
+        empty.set_halign(gtk4::Align::Start);
+        list_box.append(&empty);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::format_session_summary;
+    use super::{format_filtered_summary, format_session_summary, matches_session_query};
+    use crate::memory::SessionSummary;
+    use chrono::{TimeZone, Utc};
 
     #[test]
     fn summary_pluralization_is_correct() {
         assert_eq!(format_session_summary(1), "Showing 1 session");
         assert_eq!(format_session_summary(4), "Showing 4 sessions");
+    }
+
+    #[test]
+    fn filtered_summary_handles_partial_results() {
+        assert_eq!(format_filtered_summary(0, 0), "No sessions found");
+        assert_eq!(format_filtered_summary(3, 10), "Showing 3 of 10 sessions");
+        assert_eq!(format_filtered_summary(4, 4), "Showing 4 sessions");
+    }
+
+    #[test]
+    fn session_query_matches_title_category_or_id() {
+        let session = SessionSummary {
+            workspace: "demo".to_string(),
+            category: "general".to_string(),
+            session_id: "abc123".to_string(),
+            title: Some("Build CLI".to_string()),
+            created_at: Utc.with_ymd_and_hms(2026, 3, 16, 10, 0, 0).unwrap(),
+            last_active: Utc.with_ymd_and_hms(2026, 3, 16, 11, 0, 0).unwrap(),
+        };
+        assert!(matches_session_query(&session, "cli"));
+        assert!(matches_session_query(&session, "general"));
+        assert!(matches_session_query(&session, "abc"));
+        assert!(!matches_session_query(&session, "missing"));
     }
 }

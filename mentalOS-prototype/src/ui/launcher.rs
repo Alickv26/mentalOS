@@ -56,6 +56,15 @@ impl AppLauncher {
             .build();
         vbox.append(&scroll);
 
+        let hint = Label::new(Some(&launcher_hint_text()));
+        hint.set_halign(gtk4::Align::Start);
+        hint.add_css_class("app-bar-stats");
+        hint.set_margin_start(8);
+        hint.set_margin_end(8);
+        hint.set_margin_top(6);
+        hint.set_margin_bottom(8);
+        vbox.append(&hint);
+
         window.set_child(Some(&vbox));
 
         // ── Load desktop entries ──
@@ -211,6 +220,10 @@ fn clean_exec_command(exec: &str) -> String {
         .join(" ")
 }
 
+fn launcher_hint_text() -> String {
+    "Enter to launch • Esc to close".to_string()
+}
+
 fn matches_entry_query(entry: &DesktopEntry, query_lower: &str) -> bool {
     entry.name.to_lowercase().contains(query_lower)
         || entry.comment.to_lowercase().contains(query_lower)
@@ -344,5 +357,10 @@ mod tests {
         assert!(matches_entry_query(&entry, "browser"));
         assert!(matches_entry_query(&entry, "firefox"));
         assert!(!matches_entry_query(&entry, "terminal"));
+    }
+
+    #[test]
+    fn launcher_hint_is_stable() {
+        assert_eq!(launcher_hint_text(), "Enter to launch • Esc to close");
     }
 }

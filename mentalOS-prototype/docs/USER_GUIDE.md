@@ -45,6 +45,12 @@ Wizard fields:
 - Use the top input-row agent selector to switch between available agents.
 - The current active agent is synced from backend state.
 
+## Memory Browser
+
+- Open with `Ctrl+Shift+M`.
+- Search matches session title, category, and session id.
+- Summary shows filtered count.
+
 ## Launcher Search
 
 - Open launcher with `Ctrl+K`.

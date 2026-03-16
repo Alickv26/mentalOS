@@ -32,6 +32,7 @@ impl ShortcutsSettings {
         let title = Label::new(Some("Keyboard shortcut settings"));
         title.set_halign(gtk4::Align::Start);
         title.add_css_class("app-bar-title");
+        title.set_accessible_role(gtk4::AccessibleRole::Heading);
         root.append(&title);
 
         let subtitle = Label::new(Some(
@@ -67,12 +68,22 @@ impl ShortcutsSettings {
             label.set_halign(gtk4::Align::Start);
             label.add_css_class("message-content");
             label.set_wrap(true);
+            label.update_property(&[
+                gtk4::accessible::Property::Label(def.label),
+                gtk4::accessible::Property::Description(def.description),
+            ]);
             grid.attach(&label, 0, row, 1, 1);
 
             let combo = current_state.borrow().get(def.id);
             let entry = Entry::builder().text(&combo).build();
             entry.set_hexpand(true);
             entry.set_tooltip_text(Some(def.default));
+            entry.set_accessible_role(gtk4::AccessibleRole::TextBox);
+            entry.update_property(&[
+                gtk4::accessible::Property::Label(def.label),
+                gtk4::accessible::Property::Description(def.description),
+                gtk4::accessible::Property::Placeholder(def.default),
+            ]);
             grid.attach(&entry, 1, row, 1, 1);
             entry_map
                 .borrow_mut()
@@ -85,6 +96,13 @@ impl ShortcutsSettings {
         status_label.set_halign(gtk4::Align::Start);
         status_label.add_css_class("welcome-hint");
         status_label.set_wrap(true);
+        status_label.set_accessible_role(gtk4::AccessibleRole::Status);
+        status_label.update_property(&[
+            gtk4::accessible::Property::Label("Shortcut save status"),
+            gtk4::accessible::Property::Description(
+                "Validation and save feedback for shortcut changes.",
+            ),
+        ]);
         root.append(&status_label);
 
         let actions = Box::new(Orientation::Horizontal, 8);
@@ -94,6 +112,23 @@ impl ShortcutsSettings {
         let cancel_btn = Button::with_label("Cancel");
         let save_btn = Button::with_label("Save");
         save_btn.add_css_class("create-button");
+        reset_btn.update_property(&[
+            gtk4::accessible::Property::Label("Reset defaults"),
+            gtk4::accessible::Property::Description(
+                "Reset all shortcuts in the form to their default values.",
+            ),
+        ]);
+        cancel_btn.update_property(&[
+            gtk4::accessible::Property::Label("Cancel shortcut changes"),
+            gtk4::accessible::Property::Description("Close this dialog without applying changes."),
+        ]);
+        save_btn.update_property(&[
+            gtk4::accessible::Property::Label("Save shortcut changes"),
+            gtk4::accessible::Property::Description(
+                "Validate and persist shortcut changes to disk.",
+            ),
+            gtk4::accessible::Property::KeyShortcuts("Ctrl+Return"),
+        ]);
         actions.append(&reset_btn);
         actions.append(&cancel_btn);
         actions.append(&save_btn);

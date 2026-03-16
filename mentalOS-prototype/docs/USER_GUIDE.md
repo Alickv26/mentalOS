@@ -90,6 +90,10 @@ Shortcuts are persisted to:
   - increase: `Ctrl+Plus`
   - decrease: `Ctrl+Minus`
   - reset: `Ctrl+0`
+- Screen reader metadata:
+  - prompt input, agent selector, launcher/terminal/stop buttons
+  - chat history region and message log
+  - status/progress elements in the app bar
 
 ## Data Locations
 

@@ -18,7 +18,7 @@ Implemented in this prototype:
   - transient notifications
   - first-run config wizard
   - keyboard shortcuts help dialog
-  - runtime accessibility controls (high-contrast and font size)
+  - runtime accessibility controls (high-contrast, font size, screen-reader labels)
   - editable shortcut bindings
 
 ## Quick Start
@@ -84,6 +84,8 @@ Defaults (user-editable in Manage Shortcuts):
   - `MENTALOS_LIVE_OPENCLAW=1 cargo test live_openclaw`
 - Sandbox security smoke tests (Firejail):
   - `./scripts/sandbox_smoke.sh`
+- GTK accessibility smoke tests:
+  - `cargo test -q --test ui_accessibility`
 - Manual performance benchmarks:
   - `./scripts/perf_bench.sh`
   - GitHub Actions (on demand): `../.github/workflows/performance-benchmarks.yml`

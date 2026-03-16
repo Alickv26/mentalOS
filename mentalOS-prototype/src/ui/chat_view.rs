@@ -22,6 +22,14 @@ impl ChatView {
         let message_list = Box::new(Orientation::Vertical, 4);
         message_list.add_css_class("chat-view");
         message_list.set_vexpand(true);
+        message_list.set_accessible_role(gtk4::AccessibleRole::Log);
+        message_list.update_property(&[
+            gtk4::accessible::Property::Label("Conversation log"),
+            gtk4::accessible::Property::Description(
+                "Streaming conversation history between you and mentalOS.",
+            ),
+            gtk4::accessible::Property::MultiLine(true),
+        ]);
 
         // Welcome message
         let welcome = Label::new(Some("Welcome to mentalOS"));
@@ -38,6 +46,13 @@ impl ChatView {
             .vexpand(true)
             .child(&message_list)
             .build();
+        scroll.set_accessible_role(gtk4::AccessibleRole::Region);
+        scroll.update_property(&[
+            gtk4::accessible::Property::Label("Chat history"),
+            gtk4::accessible::Property::Description(
+                "Scrollable chat history with AI and system messages.",
+            ),
+        ]);
 
         Self {
             container: scroll,
@@ -57,6 +72,11 @@ impl ChatView {
         };
 
         row.add_css_class(row_class);
+        row.set_accessible_role(gtk4::AccessibleRole::ListItem);
+        row.update_property(&[
+            gtk4::accessible::Property::Label(role_text),
+            gtk4::accessible::Property::Description("Chat message row."),
+        ]);
 
         // Role label
         let role_label = Label::new(Some(role_text));

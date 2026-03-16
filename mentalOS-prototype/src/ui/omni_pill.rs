@@ -50,18 +50,37 @@ impl OmniPill {
         // Status Icon (left side)
         let status_icon = Label::new(Some("⚪"));
         status_icon.add_css_class("status-icon");
+        status_icon.set_accessible_role(gtk4::AccessibleRole::Status);
+        status_icon.update_property(&[
+            gtk4::accessible::Property::Label("AI status"),
+            gtk4::accessible::Property::Description(
+                "Shows whether the AI is idle, active, or running a task.",
+            ),
+        ]);
         container.append(&status_icon);
 
         // Spinner (hidden by default)
         let spinner = Spinner::new();
         spinner.add_css_class("spinner");
         spinner.set_visible(false);
+        spinner.set_accessible_role(gtk4::AccessibleRole::ProgressBar);
+        spinner.update_property(&[
+            gtk4::accessible::Property::Label("AI activity"),
+            gtk4::accessible::Property::Description("Shows when the AI is processing a request."),
+        ]);
         container.append(&spinner);
 
         // Agent Selector (Dropdown)
         let model = StringList::new(&["Loading..."]);
         let agent_selector = DropDown::builder().model(&model).build();
         agent_selector.add_css_class("agent-selector");
+        agent_selector.set_accessible_role(gtk4::AccessibleRole::ComboBox);
+        agent_selector.update_property(&[
+            gtk4::accessible::Property::Label("Agent selector"),
+            gtk4::accessible::Property::Description(
+                "Choose the active AI provider, such as OpenClaw or Ollama.",
+            ),
+        ]);
         container.append(&agent_selector);
 
         // Text Input (center)
@@ -71,17 +90,35 @@ impl OmniPill {
             .hexpand(true)
             .build();
         input.add_css_class("omni-entry");
+        input.set_accessible_role(gtk4::AccessibleRole::TextBox);
+        input.update_property(&[
+            gtk4::accessible::Property::Label("Prompt input"),
+            gtk4::accessible::Property::Description("Type your message to mentalOS."),
+            gtk4::accessible::Property::Placeholder("Ask mentalOS..."),
+            gtk4::accessible::Property::KeyShortcuts("Ctrl+L"),
+        ]);
         container.append(&input);
 
         // Action Buttons (right side)
         let apps_btn = Button::from_icon_name("view-app-grid-symbolic");
         apps_btn.add_css_class("icon-button");
         apps_btn.set_tooltip_text(Some("Apps"));
+        apps_btn.update_property(&[
+            gtk4::accessible::Property::Label("Open app launcher"),
+            gtk4::accessible::Property::Description(
+                "Opens the installed applications launcher dialog.",
+            ),
+            gtk4::accessible::Property::KeyShortcuts("Ctrl+K"),
+        ]);
         container.append(&apps_btn);
 
         let term_btn = Button::from_icon_name("utilities-terminal-symbolic");
         term_btn.add_css_class("icon-button");
         term_btn.set_tooltip_text(Some("Terminal"));
+        term_btn.update_property(&[
+            gtk4::accessible::Property::Label("Open terminal"),
+            gtk4::accessible::Property::Description("Opens a terminal command."),
+        ]);
         container.append(&term_btn);
 
         // Stop Button
@@ -89,6 +126,11 @@ impl OmniPill {
         stop_btn.add_css_class("icon-button");
         stop_btn.add_css_class("stop-button");
         stop_btn.set_tooltip_text(Some("Emergency Stop"));
+        stop_btn.update_property(&[
+            gtk4::accessible::Property::Label("Emergency stop"),
+            gtk4::accessible::Property::Description("Immediately stop active AI operations."),
+            gtk4::accessible::Property::KeyShortcuts("Ctrl+Shift+Q"),
+        ]);
         container.append(&stop_btn);
 
         Self {

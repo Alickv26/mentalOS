@@ -26,6 +26,11 @@ impl AppBar {
         // ── Title ──
         let title = Label::new(Some("mentalOS"));
         title.add_css_class("app-bar-title");
+        title.set_accessible_role(gtk4::AccessibleRole::Heading);
+        title.update_property(&[
+            gtk4::accessible::Property::Label("mentalOS"),
+            gtk4::accessible::Property::Description("Application title."),
+        ]);
         row.append(&title);
 
         // ── AI status ──
@@ -33,20 +38,38 @@ impl AppBar {
         status_label.add_css_class("app-bar-status");
         status_label.set_hexpand(true);
         status_label.set_halign(gtk4::Align::Start);
+        status_label.set_accessible_role(gtk4::AccessibleRole::Status);
+        status_label.update_property(&[
+            gtk4::accessible::Property::Label("AI status idle"),
+            gtk4::accessible::Property::Description("Current AI runtime status."),
+        ]);
         row.append(&status_label);
 
         // ── System stats ──
         let cpu_label = Label::new(Some("CPU: --%"));
         cpu_label.add_css_class("app-bar-stats");
+        cpu_label.update_property(&[
+            gtk4::accessible::Property::Label("CPU usage"),
+            gtk4::accessible::Property::Description("Current CPU usage percentage."),
+        ]);
         row.append(&cpu_label);
 
         let mem_label = Label::new(Some("MEM: --%"));
         mem_label.add_css_class("app-bar-stats");
+        mem_label.update_property(&[
+            gtk4::accessible::Property::Label("Memory usage"),
+            gtk4::accessible::Property::Description("Current memory usage percentage."),
+        ]);
         row.append(&mem_label);
 
         // ── Stop button ──
         let stop_btn = Button::with_label("🔴 STOP");
         stop_btn.add_css_class("stop-button");
+        stop_btn.update_property(&[
+            gtk4::accessible::Property::Label("Emergency stop"),
+            gtk4::accessible::Property::Description("Immediately stop active AI operations."),
+            gtk4::accessible::Property::KeyShortcuts("Ctrl+Shift+Q"),
+        ]);
         row.append(&stop_btn);
         container.append(&row);
 
@@ -55,6 +78,11 @@ impl AppBar {
         progress.set_hexpand(true);
         progress.set_visible(false);
         progress.add_css_class("app-progress");
+        progress.set_accessible_role(gtk4::AccessibleRole::ProgressBar);
+        progress.update_property(&[
+            gtk4::accessible::Property::Label("Operation progress"),
+            gtk4::accessible::Property::Description("Indicates background request progress."),
+        ]);
         container.append(&progress);
 
         let busy = Rc::new(Cell::new(false));
@@ -110,7 +138,12 @@ impl AppBar {
 
     /// Update the AI status indicator.
     pub fn set_status(&self, status: &str) {
-        self.status_label.set_text(&format!("[AI: {status}]"));
+        let label = format!("[AI: {status}]");
+        self.status_label.set_text(&label);
+        self.status_label.update_property(&[
+            gtk4::accessible::Property::Label(&format!("AI status {status}")),
+            gtk4::accessible::Property::Description("Current AI runtime status."),
+        ]);
     }
 
     pub fn connect_stop_clicked<F: Fn(&Button) + 'static>(&self, f: F) {

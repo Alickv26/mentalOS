@@ -43,6 +43,9 @@ Implemented in this prototype:
   - max size before rotation (single backup `.1`): `MENTALOS_LOG_MAX_BYTES`
 - Debug verbosity:
   - `MENTALOS_DEBUG=1 cargo run`
+- Export bug-report bundle (logs + config):
+  - `./scripts/export_logs.sh`
+  - optional output dir: `./scripts/export_logs.sh /tmp`
 
 ## Configuration
 

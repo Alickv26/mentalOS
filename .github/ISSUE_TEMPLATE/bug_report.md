@@ -48,6 +48,7 @@ You can also attach:
 
 - `~/.local/state/mentalOS/logs/mentalOS.log`
 - `~/.local/state/mentalOS/logs/mentalOS.log.1` (if present)
+- generated bundle: `./scripts/export_logs.sh`
 
 Paste key excerpts:
 

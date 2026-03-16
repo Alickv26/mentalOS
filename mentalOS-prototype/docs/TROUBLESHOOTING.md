@@ -115,3 +115,11 @@ Attach:
 - `mentalos-debug.log`
 - `~/.config/mentalOS/config.toml` (redacted keys)
 - `~/.config/mentalOS/shortcuts.toml` (if shortcut issue)
+
+Or generate a single bundle:
+
+```bash
+./scripts/export_logs.sh
+```
+
+This writes `mentalos-logs-<timestamp>.tar.gz` in the current directory.

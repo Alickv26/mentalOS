@@ -121,32 +121,26 @@ impl TaskTracker {
     }
 
     fn task_patterns() -> Vec<TaskPattern> {
-        vec![
-            TaskPattern {
-                regex: Regex::new(r"(?i)(?:remind me to|remind me about|remember to)\s+(.+?)(?:\s+by\s+(.+?))?(?:\s+priority\s+(.+?))?(?:\.|$)").unwrap(),
-            },
-            TaskPattern {
-                regex: Regex::new(r"(?i)(?:TODO|TODO:)\s*(.+?)(?:\s+by\s+(.+?))?(?:\s+priority\s+(.+?))?(?:\.|$)").unwrap(),
-            },
-            TaskPattern {
-                regex: Regex::new(r"(?i)i need to\s+(.+?)(?:\s+by\s+(.+?))?(?:\s+priority\s+(.+?))?(?:\.|$)").unwrap(),
-            },
-            TaskPattern {
-                regex: Regex::new(r"(?i)i should\s+(.+?)(?:\s+by\s+(.+?))?(?:\s+priority\s+(.+?))?(?:\.|$)").unwrap(),
-            },
-            TaskPattern {
-                regex: Regex::new(r"(?i)(?:action item|action:)\s+(.+?)(?:\s+by\s+(.+?))?(?:\s+priority\s+(.+?))?(?:\.|$)").unwrap(),
-            },
-            TaskPattern {
-                regex: Regex::new(r"(?i)don'?t forget to\s+(.+?)(?:\.|$)").unwrap(),
-            },
-            TaskPattern {
-                regex: Regex::new(r"(?i)make sure to\s+(.+?)(?:\.|$)").unwrap(),
-            },
-            TaskPattern {
-                regex: Regex::new(r"(?i)(?:follow up|followup)\s+(?:on\s+)?(.+?)(?:\.|$)").unwrap(),
-            },
-        ]
+        let raw_patterns = [
+            r"(?i)(?:remind me to|remind me about|remember to)\s+(.+?)(?:\s+by\s+(.+?))?(?:\s+priority\s+(.+?))?(?:\.|$)",
+            r"(?i)(?:TODO|TODO:)\s*(.+?)(?:\s+by\s+(.+?))?(?:\s+priority\s+(.+?))?(?:\.|$)",
+            r"(?i)i need to\s+(.+?)(?:\s+by\s+(.+?))?(?:\s+priority\s+(.+?))?(?:\.|$)",
+            r"(?i)i should\s+(.+?)(?:\s+by\s+(.+?))?(?:\s+priority\s+(.+?))?(?:\.|$)",
+            r"(?i)(?:action item|action:)\s+(.+?)(?:\s+by\s+(.+?))?(?:\s+priority\s+(.+?))?(?:\.|$)",
+            r"(?i)don'?t forget to\s+(.+?)(?:\.|$)",
+            r"(?i)make sure to\s+(.+?)(?:\.|$)",
+            r"(?i)(?:follow up|followup)\s+(?:on\s+)?(.+?)(?:\.|$)",
+        ];
+        raw_patterns
+            .iter()
+            .filter_map(|pattern| match Regex::new(pattern) {
+                Ok(regex) => Some(TaskPattern { regex }),
+                Err(err) => {
+                    log::error!("Invalid task-pattern regex '{}': {}", pattern, err);
+                    None
+                }
+            })
+            .collect()
     }
 
     fn parse_priority(text: &str) -> TaskPriority {

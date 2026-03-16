@@ -330,9 +330,7 @@ impl<E: CommandExecutor> CommandRouter<E> {
         context_limit: usize,
     ) -> Result<RouterResponse> {
         // Intercept agent switching commands
-        let switch_regex = Regex::new(r"(?i)^switch\s+(?:agent\s+)?to\s+(.+)$").unwrap();
-        if let Some(caps) = switch_regex.captures(input) {
-            let target = caps.get(1).unwrap().as_str().trim();
+        if let Some(target) = parse_switch_target(input) {
             match self.openclaw.switch_agent(target) {
                 Ok(msg) => {
                     return Ok(RouterResponse {
@@ -603,7 +601,13 @@ fn parse_ai_response(text: &str) -> ParsedResponse {
 
 fn extract_code_blocks(text: &str) -> Vec<(String, String)> {
     let mut blocks = Vec::new();
-    let re = Regex::new(r"(?s)```(?P<lang>\w+)?\n(?P<body>.*?)```").unwrap();
+    let re = match Regex::new(r"(?s)```(?P<lang>\w+)?\n(?P<body>.*?)```") {
+        Ok(re) => re,
+        Err(err) => {
+            log::error!("Failed to compile code-block regex: {}", err);
+            return blocks;
+        }
+    };
     for cap in re.captures_iter(text) {
         let lang = cap
             .name("lang")
@@ -616,6 +620,18 @@ fn extract_code_blocks(text: &str) -> Vec<(String, String)> {
         blocks.push((lang, body));
     }
     blocks
+}
+
+fn parse_switch_target(input: &str) -> Option<&str> {
+    let switch_regex = match Regex::new(r"(?i)^switch\s+(?:agent\s+)?to\s+(.+)$") {
+        Ok(re) => re,
+        Err(err) => {
+            log::error!("Failed to compile switch-agent regex: {}", err);
+            return None;
+        }
+    };
+    let caps = switch_regex.captures(input)?;
+    caps.get(1).map(|m| m.as_str().trim())
 }
 
 fn push_unique(commands: &mut Vec<String>, seen: &mut HashSet<String>, command: String) {

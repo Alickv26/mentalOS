@@ -40,7 +40,13 @@ fn main() {
     let (handshake_tx, handshake_rx) = std_mpsc::channel::<glib::Sender<BackendResponse>>();
 
     thread::spawn(move || {
-        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+        let rt = match Runtime::new() {
+            Ok(runtime) => runtime,
+            Err(err) => {
+                log::error!("Failed to create Tokio runtime: {}", err);
+                return;
+            }
+        };
         rt.block_on(async {
             log::info!("Backend started, waiting for UI handshake...");
 
@@ -449,9 +455,13 @@ fn load_css() {
         return;
     }
 
-    gtk4::style_context_add_provider_for_display(
-        &gdk::Display::default().expect("Could not get default display"),
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+    if let Some(display) = gdk::Display::default() {
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    } else {
+        log::warn!("Could not get default display for CSS provider");
+    }
 }

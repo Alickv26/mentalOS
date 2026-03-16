@@ -81,31 +81,25 @@ impl ProjectHandler {
     }
 
     fn intent_patterns() -> Vec<IntentPattern> {
-        vec![
-            // More specific patterns first (with language/framework)
-            IntentPattern {
-                regex: Regex::new(r"(?i)(?:new|create|build|make)\s+(?:a\s+)?(\w+)\s+(?:app|project|server|tool|api|cli|web)\s+with\s+(\w+)").unwrap(),
-            },
-            IntentPattern {
-                regex: Regex::new(r"(?i)create\s+(?:a\s+)?(\w+)\s+(?:app|project)\s+with\s+(\w+)").unwrap(),
-            },
-            IntentPattern {
-                regex: Regex::new(r"(?i)(?:new|create|build|make)\s+(?:a\s+)?(\w+[-]?\w*)\s+(?:\w+\s+)?(?:app|project|server|tool|api|cli)\s+(?:with|using)\s+(\w+)").unwrap(),
-            },
-            // Simpler patterns
-            IntentPattern {
-                regex: Regex::new(r"(?i)create\s+(?:a\s+)?(\w+[-]?\w*)\s+(?:\w+\s+)?(?:app|project|server|tool)?").unwrap(),
-            },
-            IntentPattern {
-                regex: Regex::new(r"(?i)build\s+(?:a\s+)?(\w+[-]?\w*)\s+(?:\w+\s+)?(?:app|project|server|tool)?").unwrap(),
-            },
-            IntentPattern {
-                regex: Regex::new(r"(?i)make\s+(?:a\s+)?(\w+[-]?\w*)\s+(?:\w+\s+)?(?:app|project|server|tool)?").unwrap(),
-            },
-            IntentPattern {
-                regex: Regex::new(r"(?i)scaffold\s+(?:a\s+)?(\w+[-]?\w*)\s+(?:\w+\s+)?(?:app|project|server|tool)?").unwrap(),
-            },
-        ]
+        let raw_patterns = [
+            r"(?i)(?:new|create|build|make)\s+(?:a\s+)?(\w+)\s+(?:app|project|server|tool|api|cli|web)\s+with\s+(\w+)",
+            r"(?i)create\s+(?:a\s+)?(\w+)\s+(?:app|project)\s+with\s+(\w+)",
+            r"(?i)(?:new|create|build|make)\s+(?:a\s+)?(\w+[-]?\w*)\s+(?:\w+\s+)?(?:app|project|server|tool|api|cli)\s+(?:with|using)\s+(\w+)",
+            r"(?i)create\s+(?:a\s+)?(\w+[-]?\w*)\s+(?:\w+\s+)?(?:app|project|server|tool)?",
+            r"(?i)build\s+(?:a\s+)?(\w+[-]?\w*)\s+(?:\w+\s+)?(?:app|project|server|tool)?",
+            r"(?i)make\s+(?:a\s+)?(\w+[-]?\w*)\s+(?:\w+\s+)?(?:app|project|server|tool)?",
+            r"(?i)scaffold\s+(?:a\s+)?(\w+[-]?\w*)\s+(?:\w+\s+)?(?:app|project|server|tool)?",
+        ];
+        raw_patterns
+            .iter()
+            .filter_map(|pattern| match Regex::new(pattern) {
+                Ok(regex) => Some(IntentPattern { regex }),
+                Err(err) => {
+                    log::error!("Invalid project-intent regex '{}': {}", pattern, err);
+                    None
+                }
+            })
+            .collect()
     }
 
     fn normalize_language(lang: &str) -> String {

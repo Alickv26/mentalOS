@@ -112,7 +112,11 @@ impl OpenClawClient {
             .ok_or_else(|| MentalOSError::Other(format!("Agent '{}' not found", name)))?
             .clone();
 
-        let agent = self.agents.get(&name_key).unwrap().clone();
+        let agent = self
+            .agents
+            .get(&name_key)
+            .cloned()
+            .ok_or_else(|| MentalOSError::Other(format!("Agent '{}' not found", name)))?;
 
         self.provider = agent.provider.clone();
 

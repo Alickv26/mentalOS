@@ -80,6 +80,7 @@ impl AppBar {
             gtk4::accessible::Property::Description(
                 "Clear the current conversation and start a new chat.",
             ),
+            gtk4::accessible::Property::KeyShortcuts("Ctrl+N"),
         ]);
         row.append(&new_chat_btn);
 

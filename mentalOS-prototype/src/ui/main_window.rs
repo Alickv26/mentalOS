@@ -150,7 +150,7 @@ impl MainWindow {
         let pill_for_new = pill.clone();
         let root_for_new = root_container.clone();
         let notifications_for_new = notifications.clone();
-        app_bar.connect_new_chat_clicked(move |_| {
+        let start_new_chat = Rc::new(move || {
             let manager = MemoryManager::new(default_workspace_root());
             if let Err(err) = manager.start_new_session("default", "general") {
                 warn!("Failed to start new session: {}", err);
@@ -164,6 +164,10 @@ impl MainWindow {
             app_bar_for_new.set_status("Idle");
             app_bar_for_new.set_busy(false);
             input_for_new.grab_focus();
+        });
+        let start_new_chat_btn = start_new_chat.clone();
+        app_bar.connect_new_chat_clicked(move |_| {
+            (start_new_chat_btn)();
         });
 
         // ── Create UI Channel Here (Avoids naming Receiver type) ──
@@ -429,6 +433,11 @@ impl MainWindow {
                     chat_ref.load_conversation(&conversation);
                     input_ref.grab_focus();
                 });
+                return glib::Propagation::Stop;
+            }
+
+            if bindings_snapshot.matches("new_chat", key, modifiers) {
+                (start_new_chat)();
                 return glib::Propagation::Stop;
             }
 

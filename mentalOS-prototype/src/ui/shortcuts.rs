@@ -14,7 +14,7 @@ pub struct ShortcutDefinition {
     pub default: &'static str,
 }
 
-pub const SHORTCUT_DEFINITIONS: [ShortcutDefinition; 11] = [
+pub const SHORTCUT_DEFINITIONS: [ShortcutDefinition; 12] = [
     ShortcutDefinition {
         id: "focus_input",
         label: "Focus input",
@@ -32,6 +32,12 @@ pub const SHORTCUT_DEFINITIONS: [ShortcutDefinition; 11] = [
         label: "Open memory browser",
         description: "Browse stored conversation memory sessions.",
         default: "Ctrl+Shift+M",
+    },
+    ShortcutDefinition {
+        id: "new_chat",
+        label: "Start new chat",
+        description: "Clear the current conversation and start a new chat.",
+        default: "Ctrl+N",
     },
     ShortcutDefinition {
         id: "toggle_high_contrast",

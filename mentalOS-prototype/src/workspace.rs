@@ -47,7 +47,7 @@ impl Default for ProjectMetadata {
 ///
 /// # Examples
 /// ```no_run
-/// use mentalOS::workspace::WorkspaceManager;
+/// use mental_os::workspace::WorkspaceManager;
 /// let manager = WorkspaceManager::new(std::path::PathBuf::from("/tmp/workspaces"));
 /// manager.create_workspace("demo", "openclaw").unwrap();
 /// ```

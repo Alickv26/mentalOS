@@ -1,5 +1,5 @@
-use mentalOS::ui::chat_view::ChatView;
-use mentalOS::ui::omni_pill::OmniPill;
+use mental_os::ui::chat_view::ChatView;
+use mental_os::ui::omni_pill::OmniPill;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::{OnceLock, mpsc};
 

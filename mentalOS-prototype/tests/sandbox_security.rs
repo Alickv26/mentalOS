@@ -1,4 +1,4 @@
-use mentalOS::router::{CommandExecutor, FirejailExecutor};
+use mental_os::router::{CommandExecutor, FirejailExecutor};
 use std::path::Path;
 use std::process::Command;
 

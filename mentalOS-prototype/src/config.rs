@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 ///
 /// # Examples
 /// ```no_run
-/// let config = mentalOS::Config::load().unwrap();
+/// let config = mental_os::Config::load().unwrap();
 /// println!("provider={}", config.ai.provider);
 /// ```
 use std::collections::HashMap;

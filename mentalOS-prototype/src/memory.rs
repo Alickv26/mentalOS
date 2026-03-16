@@ -72,7 +72,7 @@ pub struct SessionSummary {
 ///
 /// # Examples
 /// ```no_run
-/// use mentalOS::memory::{MemoryManager, Role};
+/// use mental_os::memory::{MemoryManager, Role};
 /// let manager = MemoryManager::new(std::path::PathBuf::from("/tmp/workspaces"));
 /// manager.append_message("demo", "general", Role::User, "hello").unwrap();
 /// ```

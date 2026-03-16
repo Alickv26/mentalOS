@@ -187,12 +187,12 @@ impl CommandExecutor for FirejailExecutor {
 ///
 /// # Examples
 /// ```no_run
-/// use mentalOS::router::{CommandRouter, FirejailExecutor};
-/// use mentalOS::openclaw::OpenClawClient;
-/// use mentalOS::whitelist::WhitelistManager;
-/// use mentalOS::memory::MemoryManager;
+/// use mental_os::router::{CommandRouter, FirejailExecutor};
+/// use mental_os::openclaw::OpenClawClient;
+/// use mental_os::whitelist::WhitelistManager;
+/// use mental_os::memory::MemoryManager;
 /// use std::sync::{Arc, Mutex};
-/// let config = mentalOS::Config::load().unwrap();
+/// let config = mental_os::Config::load().unwrap();
 /// let openclaw = OpenClawClient::from_config(&config);
 /// let whitelist = Arc::new(Mutex::new(WhitelistManager::load("/tmp/whitelist.json".into()).unwrap()));
 /// let memory = Arc::new(Mutex::new(MemoryManager::new("/tmp/workspaces".into())));

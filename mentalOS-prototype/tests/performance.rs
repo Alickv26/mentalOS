@@ -1,10 +1,10 @@
-use mentalOS::config::{AiConfig, OllamaConfig, OpenClawConfig, PathsConfig};
-use mentalOS::memory::MemoryManager;
-use mentalOS::openclaw::OpenClawClient;
-use mentalOS::project_handler::ProjectHandler;
-use mentalOS::router::{CommandExecutor, CommandOutput, CommandRouter};
-use mentalOS::whitelist::WhitelistManager;
-use mentalOS::workspace::{ProjectCommands, WorkspaceManager};
+use mental_os::config::{AiConfig, OllamaConfig, OpenClawConfig, PathsConfig};
+use mental_os::memory::MemoryManager;
+use mental_os::openclaw::OpenClawClient;
+use mental_os::project_handler::ProjectHandler;
+use mental_os::router::{CommandExecutor, CommandOutput, CommandRouter};
+use mental_os::whitelist::WhitelistManager;
+use mental_os::workspace::{ProjectCommands, WorkspaceManager};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -12,7 +12,7 @@ use tempfile::TempDir;
 struct NoopExecutor;
 
 impl CommandExecutor for NoopExecutor {
-    fn execute(&self, command: &str) -> mentalOS::Result<CommandOutput> {
+    fn execute(&self, command: &str) -> mental_os::Result<CommandOutput> {
         Ok(CommandOutput {
             command: command.to_string(),
             exit_code: 0,
@@ -109,7 +109,7 @@ fn build_benchmark_router() -> (CommandRouter<NoopExecutor>, TempDir) {
     whitelist.add_exact("echo run");
     let whitelist = Arc::new(Mutex::new(whitelist));
 
-    let config = mentalOS::Config {
+    let config = mental_os::Config {
         ai: AiConfig::default(),
         openclaw: OpenClawConfig::default(),
         ollama: OllamaConfig::default(),

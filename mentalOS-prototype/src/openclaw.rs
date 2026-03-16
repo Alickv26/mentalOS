@@ -17,8 +17,8 @@ use crate::config::AgentConfig;
 ///
 /// # Examples
 /// ```no_run
-/// let config = mentalOS::Config::load().unwrap();
-/// let client = mentalOS::openclaw::OpenClawClient::from_config(&config);
+/// let config = mental_os::Config::load().unwrap();
+/// let client = mental_os::openclaw::OpenClawClient::from_config(&config);
 /// ```
 use std::collections::HashMap;
 

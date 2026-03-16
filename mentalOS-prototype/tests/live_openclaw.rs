@@ -1,4 +1,4 @@
-use mentalOS::openclaw::OpenClawClient;
+use mental_os::openclaw::OpenClawClient;
 
 #[tokio::test]
 async fn live_openclaw() {
@@ -7,7 +7,7 @@ async fn live_openclaw() {
         return;
     }
 
-    let config = mentalOS::Config::load().expect("config missing");
+    let config = mental_os::Config::load().expect("config missing");
     let client = OpenClawClient::from_config(&config);
     let response = client
         .send_message("Say hello in one sentence.", &[])

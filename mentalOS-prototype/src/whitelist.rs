@@ -32,7 +32,7 @@ pub enum WhitelistDecision {
 ///
 /// # Examples
 /// ```no_run
-/// use mentalOS::whitelist::WhitelistManager;
+/// use mental_os::whitelist::WhitelistManager;
 /// use std::path::PathBuf;
 /// let manager = WhitelistManager::load(PathBuf::from("/tmp/whitelist.json")).unwrap();
 /// ```

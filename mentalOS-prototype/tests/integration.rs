@@ -1,18 +1,18 @@
 use httpmock::Method::POST;
 use httpmock::MockServer;
-use mentalOS::config::{AiConfig, OllamaConfig, OpenClawConfig, PathsConfig};
-use mentalOS::memory::MemoryManager;
-use mentalOS::openclaw::OpenClawClient;
-use mentalOS::router::{CommandExecutor, CommandOutput, CommandRouter};
-use mentalOS::whitelist::WhitelistManager;
-use mentalOS::workspace::WorkspaceManager;
+use mental_os::config::{AiConfig, OllamaConfig, OpenClawConfig, PathsConfig};
+use mental_os::memory::MemoryManager;
+use mental_os::openclaw::OpenClawClient;
+use mental_os::router::{CommandExecutor, CommandOutput, CommandRouter};
+use mental_os::whitelist::WhitelistManager;
+use mental_os::workspace::WorkspaceManager;
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
 struct NoopExecutor;
 
 impl CommandExecutor for NoopExecutor {
-    fn execute(&self, command: &str) -> mentalOS::Result<CommandOutput> {
+    fn execute(&self, command: &str) -> mental_os::Result<CommandOutput> {
         Ok(CommandOutput {
             command: command.to_string(),
             exit_code: 0,
@@ -53,7 +53,7 @@ async fn components_work_together() {
     whitelist.add_exact("echo hello");
     let whitelist = Arc::new(Mutex::new(whitelist));
 
-    let mut config = mentalOS::Config {
+    let mut config = mental_os::Config {
         ai: AiConfig::default(),
         openclaw: OpenClawConfig {
             transport: "http".to_string(),

@@ -482,3 +482,44 @@ fn is_help_fallback_shortcut(key: gtk4::gdk::Key, modifiers: gtk4::gdk::Modifier
             .map(|c| c == '/' || c == '?')
             .unwrap_or(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::is_help_fallback_shortcut;
+    use gtk4::gdk;
+
+    #[test]
+    fn help_fallback_accepts_f1_without_ctrl() {
+        assert!(is_help_fallback_shortcut(
+            gdk::Key::F1,
+            gdk::ModifierType::empty()
+        ));
+    }
+
+    #[test]
+    fn help_fallback_accepts_ctrl_slash_variants() {
+        let ctrl = gdk::ModifierType::CONTROL_MASK;
+        assert!(is_help_fallback_shortcut(gdk::Key::slash, ctrl));
+        assert!(is_help_fallback_shortcut(
+            gdk::Key::question,
+            ctrl | gdk::ModifierType::SHIFT_MASK,
+        ));
+        assert!(is_help_fallback_shortcut(gdk::Key::KP_Divide, ctrl));
+    }
+
+    #[test]
+    fn help_fallback_rejects_invalid_combinations() {
+        assert!(!is_help_fallback_shortcut(
+            gdk::Key::slash,
+            gdk::ModifierType::empty()
+        ));
+        assert!(!is_help_fallback_shortcut(
+            gdk::Key::F1,
+            gdk::ModifierType::CONTROL_MASK
+        ));
+        assert!(!is_help_fallback_shortcut(
+            gdk::Key::a,
+            gdk::ModifierType::CONTROL_MASK
+        ));
+    }
+}

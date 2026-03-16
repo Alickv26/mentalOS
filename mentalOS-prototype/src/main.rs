@@ -28,6 +28,12 @@ const DEFAULT_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
 static LOG_FILE: OnceLock<Mutex<fs::File>> = OnceLock::new();
 static LOG_FILE_PATH: OnceLock<PathBuf> = OnceLock::new();
 
+fn send_ui(ui_tx: &async_channel::Sender<BackendResponse>, msg: BackendResponse) {
+    if let Err(err) = ui_tx.send_blocking(msg) {
+        log::warn!("Failed to send backend response to UI: {}", err);
+    }
+}
+
 fn main() {
     init_logging();
 
@@ -109,72 +115,73 @@ fn main() {
                     } => {
                         log::info!("Processing input: {}", text);
                         let _ = openclaw_launcher.ensure_running();
-                        let _ = ui_tx.send_blocking(BackendResponse::Status(
-                            "AI is thinking...".to_string(),
-                        ));
+                        send_ui(
+                            &ui_tx,
+                            BackendResponse::Status("AI is thinking...".to_string()),
+                        );
 
                         if let Some(confirmation) = router.detect_project_intent(&text) {
                             log::info!("Project intent detected: {:?}", confirmation);
-                            let _ =
-                                ui_tx.send_blocking(BackendResponse::ProjectConfirmationRequired {
+                            send_ui(
+                                &ui_tx,
+                                BackendResponse::ProjectConfirmationRequired {
                                     name: confirmation.name,
                                     language: confirmation.language,
                                     framework: confirmation.framework,
-                                });
+                                },
+                            );
                             continue;
                         }
 
                         match router.handle_input(&workspace, &category, &text, 5).await {
                             Ok(response) => {
-                                let _ =
-                                    ui_tx.send_blocking(BackendResponse::Chat(response.message));
+                                send_ui(&ui_tx, BackendResponse::Chat(response.message));
                                 for output in response.outputs {
-                                    let _ =
-                                        ui_tx.send_blocking(BackendResponse::CommandResult(output));
+                                    send_ui(&ui_tx, BackendResponse::CommandResult(output));
                                 }
                                 for cmd in response.approvals_required {
-                                    let _ =
-                                        ui_tx.send_blocking(BackendResponse::ApprovalRequired(cmd));
+                                    send_ui(&ui_tx, BackendResponse::ApprovalRequired(cmd));
                                 }
                             }
                             Err(e) => {
                                 log::error!("Router error: {}", e);
-                                let _ = ui_tx.send_blocking(BackendResponse::Error(e.to_string()));
+                                send_ui(&ui_tx, BackendResponse::Error(e.to_string()));
                             }
                         }
                     }
                     BackendRequest::ExecuteCommand(cmd) => {
                         log::info!("Executing approved command: {}", cmd);
-                        let _ = ui_tx.send_blocking(BackendResponse::Status(
-                            "Executing approved command...".to_string(),
-                        ));
+                        send_ui(
+                            &ui_tx,
+                            BackendResponse::Status("Executing approved command...".to_string()),
+                        );
                         match router.execute_approved_command(&cmd) {
                             Ok(output) => {
-                                let _ = ui_tx.send_blocking(BackendResponse::CommandResult(output));
+                                send_ui(&ui_tx, BackendResponse::CommandResult(output));
                             }
                             Err(e) => {
-                                let _ = ui_tx.send_blocking(BackendResponse::Error(e.to_string()));
+                                send_ui(&ui_tx, BackendResponse::Error(e.to_string()));
                             }
                         }
                     }
                     BackendRequest::GetAgents => {
                         let agents = router.list_agents();
                         let current = router.get_current_provider();
-                        let _ = ui_tx.send_blocking(BackendResponse::AgentList { agents, current });
+                        send_ui(&ui_tx, BackendResponse::AgentList { agents, current });
                     }
                     BackendRequest::SwitchAgent(name) => {
                         log::info!("Switching agent to: {}", name);
-                        let _ = ui_tx.send_blocking(BackendResponse::Status(format!(
-                            "Switching agent to {}...",
-                            name
-                        )));
+                        send_ui(
+                            &ui_tx,
+                            BackendResponse::Status(format!("Switching agent to {}...", name)),
+                        );
                         match router.switch_agent(&name) {
                             Ok(msg) => {
-                                let _ = ui_tx.send_blocking(BackendResponse::AgentSwitched(name));
-                                let _ = ui_tx.send_blocking(BackendResponse::Chat(msg));
+                                send_ui(&ui_tx, BackendResponse::AgentSwitched(name));
+                                send_ui(&ui_tx, BackendResponse::Chat(msg));
                             }
                             Err(e) => {
-                                let _ = ui_tx.send_blocking(BackendResponse::Error(e.to_string()));
+                                send_ui(&ui_tx, BackendResponse::Error(e.to_string()));
                             }
                         }
                     }
@@ -189,24 +196,30 @@ fn main() {
                             language,
                             framework
                         );
-                        let _ = ui_tx.send_blocking(BackendResponse::Status(format!(
-                            "Creating project '{}'...",
-                            name
-                        )));
+                        send_ui(
+                            &ui_tx,
+                            BackendResponse::Status(format!("Creating project '{}'...", name)),
+                        );
                         match router.create_project(&name, language, framework) {
                             Ok((success, message, path)) => {
-                                let _ = ui_tx.send_blocking(BackendResponse::ProjectCreated {
-                                    success,
-                                    path,
-                                    message,
-                                });
+                                send_ui(
+                                    &ui_tx,
+                                    BackendResponse::ProjectCreated {
+                                        success,
+                                        path,
+                                        message,
+                                    },
+                                );
                             }
                             Err(e) => {
-                                let _ = ui_tx.send_blocking(BackendResponse::ProjectCreated {
-                                    success: false,
-                                    path: None,
-                                    message: e.to_string(),
-                                });
+                                send_ui(
+                                    &ui_tx,
+                                    BackendResponse::ProjectCreated {
+                                        success: false,
+                                        path: None,
+                                        message: e.to_string(),
+                                    },
+                                );
                             }
                         }
                     }
@@ -219,25 +232,25 @@ fn main() {
                             command_type,
                             workspace
                         );
-                        let _ = ui_tx.send_blocking(BackendResponse::Status(format!(
-                            "Running '{}' in project...",
-                            command_type
-                        )));
+                        send_ui(
+                            &ui_tx,
+                            BackendResponse::Status(format!(
+                                "Running '{}' in project...",
+                                command_type
+                            )),
+                        );
                         match router.run_project_command(&workspace, "general", &command_type) {
                             Ok(response) => {
-                                let _ =
-                                    ui_tx.send_blocking(BackendResponse::Chat(response.message));
+                                send_ui(&ui_tx, BackendResponse::Chat(response.message));
                                 for output in response.outputs {
-                                    let _ =
-                                        ui_tx.send_blocking(BackendResponse::CommandResult(output));
+                                    send_ui(&ui_tx, BackendResponse::CommandResult(output));
                                 }
                                 for cmd in response.approvals_required {
-                                    let _ =
-                                        ui_tx.send_blocking(BackendResponse::ApprovalRequired(cmd));
+                                    send_ui(&ui_tx, BackendResponse::ApprovalRequired(cmd));
                                 }
                             }
                             Err(e) => {
-                                let _ = ui_tx.send_blocking(BackendResponse::Error(e.to_string()));
+                                send_ui(&ui_tx, BackendResponse::Error(e.to_string()));
                             }
                         }
                     }
@@ -246,10 +259,10 @@ fn main() {
                         let _ = openclaw_launcher.stop();
                         match router.emergency_stop() {
                             Ok(msg) => {
-                                let _ = ui_tx.send_blocking(BackendResponse::Chat(msg));
+                                send_ui(&ui_tx, BackendResponse::Chat(msg));
                             }
                             Err(e) => {
-                                let _ = ui_tx.send_blocking(BackendResponse::Error(e.to_string()));
+                                send_ui(&ui_tx, BackendResponse::Error(e.to_string()));
                             }
                         }
                     }
@@ -280,12 +293,16 @@ fn main() {
             let win_for_onboarding_from_wizard = win_for_onboarding.clone();
             ConfigWizard::show(&win.window, move || {
                 if let Some(tx) = handshake_for_wizard.borrow_mut().take() {
-                    let _ = tx.send(ui_tx_for_wizard.clone());
+                    if let Err(err) = tx.send(ui_tx_for_wizard.clone()) {
+                        log::warn!("Failed to send UI handshake after setup wizard: {}", err);
+                    }
                 }
                 show_onboarding_if_needed(&win_for_onboarding_from_wizard);
             });
         } else if let Some(tx) = handshake_tx.borrow_mut().take() {
-            let _ = tx.send(ui_tx);
+            if let Err(err) = tx.send(ui_tx) {
+                log::warn!("Failed to send UI handshake: {}", err);
+            }
             show_onboarding_if_needed(&win_for_onboarding);
         }
     });

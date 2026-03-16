@@ -1,3 +1,5 @@
+use crate::memory::{Conversation, Role};
+use chrono::{DateTime, Local, Utc};
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Box, Label, Orientation, PolicyType, ScrolledWindow};
@@ -113,6 +115,21 @@ impl ChatView {
         append_welcome_rows(&self.message_list);
     }
 
+    pub fn load_conversation(&self, conversation: &Conversation) {
+        while let Some(child) = self.message_list.first_child() {
+            self.message_list.remove(&child);
+        }
+
+        for message in &conversation.messages {
+            let role = match message.role {
+                Role::User => MessageRole::User,
+                Role::Assistant => MessageRole::Ai,
+                Role::System => MessageRole::System,
+            };
+            self.append_message_with_time(role, &message.content, message.timestamp);
+        }
+    }
+
     fn scroll_to_bottom(&self) {
         let adj = self.container.vadjustment();
         glib::idle_add_local_once(move || {
@@ -122,6 +139,55 @@ impl ChatView {
                 adj_late.set_value(adj_late.upper() - adj_late.page_size());
             });
         });
+    }
+
+    fn append_message_with_time(&self, role: MessageRole, content: &str, timestamp: DateTime<Utc>) {
+        let row = Box::new(Orientation::Vertical, 2);
+        row.add_css_class("message-row");
+
+        let (role_text, role_class, row_class) = match role {
+            MessageRole::User => ("You", "message-role-user", "user-message"),
+            MessageRole::Ai => ("AI", "message-role-ai", "ai-message"),
+            MessageRole::System => ("System", "message-role-ai", "system-message"),
+        };
+
+        row.add_css_class(row_class);
+        row.set_accessible_role(gtk4::AccessibleRole::ListItem);
+        row.update_property(&[
+            gtk4::accessible::Property::Label(role_text),
+            gtk4::accessible::Property::Description("Chat message row."),
+        ]);
+
+        let role_header = format_role_header(role_text, &time_label_from_timestamp(timestamp));
+        let role_label = Label::new(Some(&role_header));
+        role_label.add_css_class("message-role");
+        role_label.add_css_class(role_class);
+        role_label.set_halign(gtk4::Align::Start);
+        row.append(&role_label);
+
+        for part in split_code_blocks(content) {
+            match part {
+                ContentPart::Text(text) => {
+                    let label = Label::new(Some(&text));
+                    label.add_css_class("message-content");
+                    label.set_halign(gtk4::Align::Start);
+                    label.set_wrap(true);
+                    label.set_selectable(true);
+                    row.append(&label);
+                }
+                ContentPart::Code(code) => {
+                    let label = Label::new(Some(&code));
+                    label.add_css_class("code-block");
+                    label.set_halign(gtk4::Align::Start);
+                    label.set_wrap(true);
+                    label.set_selectable(true);
+                    row.append(&label);
+                }
+            }
+        }
+
+        self.message_list.append(&row);
+        self.scroll_to_bottom();
     }
 }
 
@@ -136,11 +202,15 @@ fn append_welcome_rows(message_list: &Box) {
 }
 
 fn current_time_label() -> String {
-    chrono::Local::now().format("%H:%M").to_string()
+    Local::now().format("%H:%M").to_string()
 }
 
 fn format_role_header(role: &str, time_label: &str) -> String {
     format!("{role} · {time_label}")
+}
+
+fn time_label_from_timestamp(timestamp: DateTime<Utc>) -> String {
+    timestamp.with_timezone(&Local).format("%H:%M").to_string()
 }
 
 // ── Simple code-block splitter ───────────────────────────────
@@ -193,11 +263,20 @@ fn split_code_blocks(content: &str) -> Vec<ContentPart> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     #[test]
     fn format_role_header_contains_role_and_time() {
         let header = format_role_header("AI", "14:23");
         assert_eq!(header, "AI · 14:23");
+    }
+
+    #[test]
+    fn time_label_from_timestamp_formats_to_hour_minute() {
+        let ts = Utc.with_ymd_and_hms(2026, 3, 16, 14, 30, 0).unwrap();
+        let label = time_label_from_timestamp(ts);
+        assert_eq!(label.len(), 5);
+        assert!(label.contains(':'));
     }
 
     #[test]

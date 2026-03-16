@@ -1,13 +1,15 @@
-use crate::memory::{MemoryManager, SessionSummary};
+use crate::memory::{Conversation, MemoryManager, SessionSummary, default_workspace_root};
 use gtk4::prelude::*;
-use gtk4::{Box, Entry, Label, Orientation, PolicyType, ScrolledWindow, Window};
-use std::path::PathBuf;
+use gtk4::{Box, Button, Entry, Label, Orientation, PolicyType, ScrolledWindow, Window};
 use std::rc::Rc;
 
 pub struct MemoryBrowser;
 
 impl MemoryBrowser {
-    pub fn show(parent: &impl IsA<gtk4::Window>, workspace: &str) {
+    pub fn show<F>(parent: &impl IsA<gtk4::Window>, workspace: &str, on_select: F)
+    where
+        F: Fn(Conversation, SessionSummary) + 'static,
+    {
         let window = Window::builder()
             .title("Conversation Memory")
             .modal(true)
@@ -45,14 +47,29 @@ impl MemoryBrowser {
         match manager.list_sessions(workspace) {
             Ok(sessions) if !sessions.is_empty() => {
                 let sessions = Rc::new(sessions);
-                populate_sessions(&list_box, &summary, &sessions, "");
+                let manager = Rc::new(manager);
+                let on_select: Rc<dyn Fn(Conversation, SessionSummary)> = Rc::new(on_select);
+                populate_sessions(
+                    &list_box, &summary, &sessions, &manager, &on_select, &window, "",
+                );
 
                 let list_ref = list_box.clone();
                 let summary_ref = summary.clone();
                 let sessions_ref = sessions.clone();
+                let manager_ref = manager.clone();
+                let on_select_ref = on_select.clone();
+                let window_ref = window.clone();
                 search.connect_changed(move |entry| {
                     let query = entry.text().to_string();
-                    populate_sessions(&list_ref, &summary_ref, &sessions_ref, &query);
+                    populate_sessions(
+                        &list_ref,
+                        &summary_ref,
+                        &sessions_ref,
+                        &manager_ref,
+                        &on_select_ref,
+                        &window_ref,
+                        &query,
+                    );
                 });
             }
             Ok(_) => {
@@ -84,13 +101,6 @@ impl MemoryBrowser {
     }
 }
 
-fn default_workspace_root() -> PathBuf {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/tmp"));
-    home.join("workspaces")
-}
-
 fn format_session_summary(count: usize) -> String {
     if count == 1 {
         "Showing 1 session".to_string()
@@ -119,7 +129,15 @@ fn matches_session_query(session: &SessionSummary, query_lower: &str) -> bool {
         || session.session_id.to_lowercase().contains(query_lower)
 }
 
-fn populate_sessions(list_box: &Box, summary: &Label, sessions: &[SessionSummary], query: &str) {
+fn populate_sessions(
+    list_box: &Box,
+    summary: &Label,
+    sessions: &[SessionSummary],
+    manager: &Rc<MemoryManager>,
+    on_select: &Rc<dyn Fn(Conversation, SessionSummary)>,
+    window: &Window,
+    query: &str,
+) {
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
@@ -136,9 +154,9 @@ fn populate_sessions(list_box: &Box, summary: &Label, sessions: &[SessionSummary
         }
         shown += 1;
 
+        let btn = Button::new();
+        btn.add_css_class("launcher-item");
         let row = Box::new(Orientation::Vertical, 2);
-        row.add_css_class("message-row");
-        row.add_css_class("ai-message");
 
         let title_text = session
             .title
@@ -161,7 +179,41 @@ fn populate_sessions(list_box: &Box, summary: &Label, sessions: &[SessionSummary
         meta.add_css_class("app-bar-stats");
         row.append(&meta);
 
-        list_box.append(&row);
+        btn.set_child(Some(&row));
+        let session_clone = session.clone();
+        let manager_ref = Rc::clone(manager);
+        let window_ref = window.clone();
+        let on_select_ref = Rc::clone(on_select);
+        btn.connect_clicked(move |_| {
+            let loaded = manager_ref.load_session(
+                &session_clone.workspace,
+                &session_clone.category,
+                &session_clone.session_id,
+            );
+            match loaded {
+                Ok(Some(conversation)) => {
+                    let _ = manager_ref.set_active_session(
+                        &session_clone.workspace,
+                        &session_clone.category,
+                        &session_clone.session_id,
+                    );
+                    on_select_ref(conversation, session_clone.clone());
+                    window_ref.close();
+                }
+                Ok(None) => {
+                    log::warn!("Session not found: {}", session_clone.session_id);
+                }
+                Err(err) => {
+                    log::warn!(
+                        "Failed to load session {}: {}",
+                        session_clone.session_id,
+                        err
+                    );
+                }
+            }
+        });
+
+        list_box.append(&btn);
     }
 
     summary.set_text(&format_filtered_summary(shown, sessions.len()));

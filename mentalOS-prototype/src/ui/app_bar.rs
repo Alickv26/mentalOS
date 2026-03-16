@@ -11,6 +11,7 @@ pub struct AppBar {
     status_label: Label,
     _cpu_label: Label,
     _mem_label: Label,
+    new_chat_btn: Button,
     memory_btn: Button,
     stop_btn: Button,
     progress: ProgressBar,
@@ -19,6 +20,10 @@ pub struct AppBar {
 
 fn memory_button_label() -> &'static str {
     "Memory"
+}
+
+fn new_chat_button_label() -> &'static str {
+    "New chat"
 }
 
 impl AppBar {
@@ -67,6 +72,17 @@ impl AppBar {
         ]);
         row.append(&mem_label);
 
+        // ── New chat button ──
+        let new_chat_btn = Button::with_label(new_chat_button_label());
+        new_chat_btn.add_css_class("icon-button");
+        new_chat_btn.update_property(&[
+            gtk4::accessible::Property::Label("Start a new chat"),
+            gtk4::accessible::Property::Description(
+                "Clear the current conversation and start a new chat.",
+            ),
+        ]);
+        row.append(&new_chat_btn);
+
         // ── Memory button ──
         let memory_btn = Button::with_label(memory_button_label());
         memory_btn.add_css_class("icon-button");
@@ -106,6 +122,7 @@ impl AppBar {
             status_label,
             _cpu_label: cpu_label.clone(),
             _mem_label: mem_label.clone(),
+            new_chat_btn: new_chat_btn.clone(),
             memory_btn: memory_btn.clone(),
             stop_btn: stop_btn.clone(),
             progress: progress.clone(),
@@ -166,6 +183,10 @@ impl AppBar {
         self.stop_btn.connect_clicked(f);
     }
 
+    pub fn connect_new_chat_clicked<F: Fn(&Button) + 'static>(&self, f: F) {
+        self.new_chat_btn.connect_clicked(f);
+    }
+
     pub fn connect_memory_clicked<F: Fn(&Button) + 'static>(&self, f: F) {
         self.memory_btn.connect_clicked(f);
     }
@@ -183,10 +204,15 @@ impl AppBar {
 
 #[cfg(test)]
 mod tests {
-    use super::memory_button_label;
+    use super::{memory_button_label, new_chat_button_label};
 
     #[test]
     fn memory_button_label_is_stable() {
         assert_eq!(memory_button_label(), "Memory");
+    }
+
+    #[test]
+    fn new_chat_button_label_is_stable() {
+        assert_eq!(new_chat_button_label(), "New chat");
     }
 }

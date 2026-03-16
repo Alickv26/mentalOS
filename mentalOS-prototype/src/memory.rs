@@ -98,6 +98,7 @@ impl MemoryManager {
         fs::create_dir_all(&dir)?;
 
         let file_path = self.active_or_new_session_file(&dir)?;
+        let _ = self.set_active_session(workspace, &category, &session_id_from_path(&file_path));
         let mut conversation = load_conversation(&file_path)?.unwrap_or_else(|| Conversation {
             session_id: session_id_from_path(&file_path),
             created_at: Utc::now(),
@@ -219,13 +220,31 @@ impl MemoryManager {
         if !dir.exists() {
             return Ok(None);
         }
-
-        for file in list_memory_files(&dir)? {
-            if session_id_from_path(&file) == session_id {
-                return load_conversation(&file);
-            }
+        if let Some(file) = find_session_file(&dir, session_id)? {
+            return load_conversation(&file);
         }
         Ok(None)
+    }
+
+    pub fn set_active_session(
+        &self,
+        workspace: &str,
+        category: &str,
+        session_id: &str,
+    ) -> Result<PathBuf> {
+        let dir = self.category_dir(workspace, &normalize_category(category));
+        fs::create_dir_all(&dir)?;
+        let marker = active_session_marker(&dir);
+        fs::write(&marker, session_id)?;
+        Ok(marker)
+    }
+
+    pub fn start_new_session(&self, workspace: &str, category: &str) -> Result<PathBuf> {
+        let dir = self.category_dir(workspace, &normalize_category(category));
+        fs::create_dir_all(&dir)?;
+        let marker = active_session_marker(&dir);
+        fs::write(&marker, "NEW")?;
+        Ok(marker)
     }
 
     fn category_dir(&self, workspace: &str, category: &str) -> PathBuf {
@@ -236,19 +255,30 @@ impl MemoryManager {
     }
 
     fn active_or_new_session_file(&self, dir: &Path) -> Result<PathBuf> {
+        if let Some(active) = read_active_session_id(dir) {
+            if active == "NEW" {
+                return new_session_file(dir);
+            }
+            if let Some(active_file) = find_session_file(dir, &active)? {
+                return Ok(active_file);
+            }
+            return new_session_file(dir);
+        }
         let mut files = list_memory_files(dir)?;
         files.sort();
         if let Some(last) = files.last() {
             return Ok(last.clone());
         }
 
-        let now = Local::now();
-        let date = now.format("%Y-%m-%d").to_string();
-        let time = now.format("%H%M").to_string();
-        let session_id = generate_session_id();
-        let file_name = format!("{date}-{time}-{session_id}.json");
-        Ok(dir.join(file_name))
+        new_session_file(dir)
     }
+}
+
+pub fn default_workspace_root() -> PathBuf {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+    home.join("workspaces")
 }
 
 fn auto_title(messages: &[Message]) -> Option<String> {
@@ -344,10 +374,63 @@ fn session_id_from_path(path: &Path) -> String {
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown-session".to_string());
 
+    if is_legacy_session_id(&stem) {
+        return stem;
+    }
     if let Some((_, tail)) = stem.rsplit_once('-') {
         return tail.to_string();
     }
     stem
+}
+
+fn active_session_marker(dir: &Path) -> PathBuf {
+    dir.join(".active")
+}
+
+fn read_active_session_id(dir: &Path) -> Option<String> {
+    let marker = active_session_marker(dir);
+    fs::read_to_string(marker)
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+fn find_session_file(dir: &Path, session_id: &str) -> Result<Option<PathBuf>> {
+    for file in list_memory_files(dir)? {
+        if session_id_from_path(&file) == session_id {
+            return Ok(Some(file));
+        }
+        if let Some(conversation) = load_conversation(&file)? {
+            if conversation.session_id == session_id {
+                return Ok(Some(file));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn new_session_file(dir: &Path) -> Result<PathBuf> {
+    let now = Local::now();
+    let date = now.format("%Y-%m-%d").to_string();
+    let time = now.format("%H%M").to_string();
+    let session_id = generate_session_id();
+    let file_name = format!("{date}-{time}-{session_id}.json");
+    Ok(dir.join(file_name))
+}
+
+fn is_legacy_session_id(stem: &str) -> bool {
+    let mut parts = stem.split('-');
+    let year = parts.next().unwrap_or("");
+    let month = parts.next().unwrap_or("");
+    let day = parts.next().unwrap_or("");
+    let tail = parts.next().unwrap_or("");
+    if parts.next().is_some() {
+        return false;
+    }
+    year.len() == 4
+        && month.len() == 2
+        && day.len() == 2
+        && !tail.is_empty()
+        && stem.chars().all(|c| c.is_ascii_digit() || c == '-')
 }
 
 fn list_memory_files(dir: &Path) -> Result<Vec<PathBuf>> {
@@ -461,5 +544,52 @@ mod tests {
         let sessions = manager.list_sessions("demo").unwrap();
         assert_eq!(sessions.len(), 1);
         assert!(sessions[0].title.is_some());
+    }
+
+    #[test]
+    fn active_session_marker_round_trip() {
+        let temp_dir = TempDir::new().unwrap();
+        let marker = active_session_marker(temp_dir.path());
+        fs::write(&marker, "abc123").unwrap();
+        assert_eq!(
+            read_active_session_id(temp_dir.path()),
+            Some("abc123".into())
+        );
+    }
+
+    #[test]
+    fn load_session_matches_full_session_id() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+        let dir = temp_dir.path().join("demo").join(".memory").join("general");
+        fs::create_dir_all(&dir).unwrap();
+
+        let session_id = "2026-02-13-001";
+        let conversation = Conversation {
+            session_id: session_id.to_string(),
+            created_at: Utc::now(),
+            last_active: Utc::now(),
+            title: Some("Legacy chat".to_string()),
+            messages: vec![Message {
+                role: Role::User,
+                content: "hello".to_string(),
+                timestamp: Utc::now(),
+                actions: Vec::new(),
+            }],
+            metadata: ConversationMetadata {
+                workspace: "demo".to_string(),
+                ..ConversationMetadata::default()
+            },
+        };
+        let file_path = dir.join(format!("{session_id}.json"));
+        fs::write(
+            &file_path,
+            serde_json::to_string_pretty(&conversation).unwrap(),
+        )
+        .unwrap();
+
+        let loaded = manager.load_session("demo", "general", session_id).unwrap();
+        assert!(loaded.is_some());
+        assert_eq!(loaded.unwrap().session_id, session_id);
     }
 }

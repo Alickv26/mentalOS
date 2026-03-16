@@ -6,6 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use tokio::sync::mpsc::Sender;
 
+use crate::memory::{MemoryManager, default_workspace_root};
 use crate::ui::app_bar::AppBar;
 use crate::ui::approval::{ApprovalDecision, ApprovalDialog};
 use crate::ui::chat_view::{ChatView, MessageRole};
@@ -128,8 +129,41 @@ impl MainWindow {
         });
 
         let win_for_memory = window.clone();
+        let chat_for_memory = chat_view.clone();
+        let input_for_memory = pill.input.clone();
         app_bar.connect_memory_clicked(move |_| {
-            MemoryBrowser::show(&win_for_memory, "default");
+            let win_ref = win_for_memory.clone();
+            let chat_ref = chat_for_memory.clone();
+            let input_ref = input_for_memory.clone();
+            MemoryBrowser::show(&win_for_memory, "default", move |conversation, _summary| {
+                chat_ref.container.set_visible(true);
+                win_ref.set_default_height(500);
+                chat_ref.load_conversation(&conversation);
+                input_ref.grab_focus();
+            });
+        });
+
+        let chat_for_new = chat_view.clone();
+        let input_for_new = pill.input.clone();
+        let win_for_new = window.clone();
+        let app_bar_for_new = app_bar.clone();
+        let pill_for_new = pill.clone();
+        let root_for_new = root_container.clone();
+        let notifications_for_new = notifications.clone();
+        app_bar.connect_new_chat_clicked(move |_| {
+            let manager = MemoryManager::new(default_workspace_root());
+            if let Err(err) = manager.start_new_session("default", "general") {
+                warn!("Failed to start new session: {}", err);
+                notifications_for_new.show("Unable to start a new chat session.");
+            }
+
+            chat_for_new.clear();
+            chat_for_new.container.set_visible(true);
+            win_for_new.set_default_height(500);
+            set_visual_state(&root_for_new, &pill_for_new, AiState::Sleep);
+            app_bar_for_new.set_status("Idle");
+            app_bar_for_new.set_busy(false);
+            input_for_new.grab_focus();
         });
 
         // ── Create UI Channel Here (Avoids naming Receiver type) ──
@@ -386,7 +420,15 @@ impl MainWindow {
             }
 
             if bindings_snapshot.matches("open_memory_browser", key, modifiers) {
-                MemoryBrowser::show(&win_for_keys, "default");
+                let chat_ref = chat_view.clone();
+                let win_ref = win_for_keys.clone();
+                let input_ref = input_for_keys.clone();
+                MemoryBrowser::show(&win_for_keys, "default", move |conversation, _summary| {
+                    chat_ref.container.set_visible(true);
+                    win_ref.set_default_height(500);
+                    chat_ref.load_conversation(&conversation);
+                    input_ref.grab_focus();
+                });
                 return glib::Propagation::Stop;
             }
 

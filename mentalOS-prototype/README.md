@@ -86,6 +86,8 @@ Defaults (user-editable in Manage Shortcuts):
   - `./scripts/sandbox_smoke.sh`
 - GTK accessibility smoke tests:
   - `cargo test -q --test ui_accessibility`
+- Coverage report (target: >=80% lines):
+  - `cargo llvm-cov --workspace --all-features --summary-only --fail-under-lines 80`
 - Manual performance benchmarks:
   - `./scripts/perf_bench.sh`
   - GitHub Actions (on demand): `../.github/workflows/performance-benchmarks.yml`

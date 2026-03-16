@@ -81,6 +81,22 @@ Recommended quick test:
 
 - switch provider to `ollama` and confirm local path works
 
+## Validate sandbox behavior
+
+Run:
+
+```bash
+./scripts/sandbox_smoke.sh
+```
+
+This verifies:
+
+- sandbox environment variable injection (`MENTALOS_SANDBOX=1`)
+- `/tmp` host isolation when `private-tmp` is active
+- command timeout enforcement
+
+If your environment blocks Firejail namespace creation, tests auto-skip.
+
 ## Collecting logs for bug reports
 
 Recommended command:

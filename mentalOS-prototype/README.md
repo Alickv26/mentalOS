@@ -82,6 +82,8 @@ Defaults (user-editable in Manage Shortcuts):
   - `MENTALOS_LIVE_OLLAMA=1 cargo test live_ollama`
 - Live OpenClaw integration test:
   - `MENTALOS_LIVE_OPENCLAW=1 cargo test live_openclaw`
+- Sandbox security smoke tests (Firejail):
+  - `./scripts/sandbox_smoke.sh`
 - Manual performance benchmarks:
   - `./scripts/perf_bench.sh`
   - GitHub Actions (on demand): `.github/workflows/performance-benchmarks.yml`

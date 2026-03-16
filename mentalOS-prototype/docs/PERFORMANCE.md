@@ -14,7 +14,7 @@ From `mentalOS-prototype`:
 
 On-demand CI workflow:
 
-- Trigger `.github/workflows/performance-benchmarks.yml` via
+- Trigger `../.github/workflows/performance-benchmarks.yml` via
   `Actions -> Performance Benchmarks -> Run workflow`.
 - The workflow uploads:
   - `performance-bench.log`

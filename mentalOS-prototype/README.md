@@ -86,7 +86,9 @@ Defaults (user-editable in Manage Shortcuts):
   - `./scripts/sandbox_smoke.sh`
 - Manual performance benchmarks:
   - `./scripts/perf_bench.sh`
-  - GitHub Actions (on demand): `.github/workflows/performance-benchmarks.yml`
+  - GitHub Actions (on demand): `../.github/workflows/performance-benchmarks.yml`
+- Continuous integration (fmt + tests):
+  - `../.github/workflows/ci.yml`
 
 ## Documentation
 
@@ -98,5 +100,6 @@ Defaults (user-editable in Manage Shortcuts):
 
 ## Reporting Issues
 
-Use `.github/ISSUE_TEMPLATE/bug_report.md` when filing bugs. It includes the
-required runtime/logging details to reproduce UI and agent problems quickly.
+Use `../.github/ISSUE_TEMPLATE/bug_report.md` when filing bugs. It includes
+the required runtime/logging details to reproduce UI and agent problems
+quickly.

@@ -24,6 +24,9 @@ jobs:
       MENTALOS_PERF_ITERATIONS: ${{ github.event.inputs.perf_iterations }}
       MENTALOS_PERF_WARMUP: ${{ github.event.inputs.perf_warmup }}
       MENTALOS_STRESS_ITERATIONS: ${{ github.event.inputs.stress_iterations }}
+    defaults:
+      run:
+        working-directory: mentalOS-prototype
 
     steps:
       - name: Checkout
@@ -46,6 +49,8 @@ jobs:
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: mentalOS-prototype -> target
 
       - name: Run Benchmarks
         run: |

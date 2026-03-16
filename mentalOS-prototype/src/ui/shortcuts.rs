@@ -334,4 +334,67 @@ mod tests {
             validate_shortcut(def.default).expect("default shortcut should be valid");
         }
     }
+
+    #[test]
+    fn compact_format_parses_without_plus_separator() {
+        validate_shortcut("Ctrl/").expect("Ctrl/ should be accepted");
+        validate_shortcut("Ctrl?").expect("Ctrl? should be accepted");
+        validate_shortcut("ShiftTab").expect("ShiftTab should be accepted");
+    }
+
+    #[test]
+    fn rejects_invalid_shortcuts() {
+        assert!(validate_shortcut("").is_err());
+        assert!(validate_shortcut("Ctrl").is_err());
+        assert!(validate_shortcut("Ctrl+Alt+Shift").is_err());
+        assert!(validate_shortcut("Ctrl+Shift+FooBar").is_err());
+        assert!(validate_shortcut("Ctrl+A+B").is_err());
+    }
+
+    #[test]
+    fn question_shortcut_matches_slash_with_shift() {
+        assert!(matches_shortcut(
+            "Ctrl+Question",
+            gdk::Key::slash,
+            gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::SHIFT_MASK,
+        ));
+    }
+
+    #[test]
+    fn slash_shortcut_matches_numpad_divide() {
+        assert!(matches_shortcut(
+            "Ctrl+Slash",
+            gdk::Key::KP_Divide,
+            gdk::ModifierType::CONTROL_MASK,
+        ));
+    }
+
+    #[test]
+    fn implicit_shift_is_allowed_for_shifted_symbols() {
+        assert!(matches_shortcut(
+            "Ctrl+Equal",
+            gdk::Key::plus,
+            gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::SHIFT_MASK,
+        ));
+        assert!(matches_shortcut(
+            "Ctrl+Slash",
+            gdk::Key::question,
+            gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::SHIFT_MASK,
+        ));
+    }
+
+    #[test]
+    fn unexpected_shift_is_rejected_for_plain_keys() {
+        assert!(!matches_shortcut(
+            "Ctrl+L",
+            gdk::Key::l,
+            gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::SHIFT_MASK,
+        ));
+    }
+
+    #[test]
+    fn missing_binding_falls_back_to_default() {
+        let bindings = ShortcutBindings::default();
+        assert_eq!(bindings.get("missing_action"), "Ctrl+K");
+    }
 }

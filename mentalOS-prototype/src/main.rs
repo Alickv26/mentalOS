@@ -1,4 +1,3 @@
-use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Application, CssProvider, gdk};
 use mentalOS::config::{Config, config_path};
@@ -34,10 +33,9 @@ fn main() {
 
     let (backend_tx, mut backend_rx) = mpsc::channel::<BackendRequest>(32);
 
-    // Handshake channel to pass UI Sender to Backend thread once created
-    // The type must match exactly what MainWindow returns: glib::Sender<BackendResponse>
-    // Since we use 'use gtk4::glib', it is gtk4::glib::Sender.
-    let (handshake_tx, handshake_rx) = std_mpsc::channel::<glib::Sender<BackendResponse>>();
+    // Handshake channel to pass UI Sender to Backend thread once created.
+    let (handshake_tx, handshake_rx) =
+        std_mpsc::channel::<async_channel::Sender<BackendResponse>>();
 
     thread::spawn(move || {
         let rt = match Runtime::new() {
@@ -111,67 +109,72 @@ fn main() {
                     } => {
                         log::info!("Processing input: {}", text);
                         let _ = openclaw_launcher.ensure_running();
-                        let _ =
-                            ui_tx.send(BackendResponse::Status("AI is thinking...".to_string()));
+                        let _ = ui_tx.send_blocking(BackendResponse::Status(
+                            "AI is thinking...".to_string(),
+                        ));
 
                         if let Some(confirmation) = router.detect_project_intent(&text) {
                             log::info!("Project intent detected: {:?}", confirmation);
-                            let _ = ui_tx.send(BackendResponse::ProjectConfirmationRequired {
-                                name: confirmation.name,
-                                language: confirmation.language,
-                                framework: confirmation.framework,
-                            });
+                            let _ =
+                                ui_tx.send_blocking(BackendResponse::ProjectConfirmationRequired {
+                                    name: confirmation.name,
+                                    language: confirmation.language,
+                                    framework: confirmation.framework,
+                                });
                             continue;
                         }
 
                         match router.handle_input(&workspace, &category, &text, 5).await {
                             Ok(response) => {
-                                let _ = ui_tx.send(BackendResponse::Chat(response.message));
+                                let _ =
+                                    ui_tx.send_blocking(BackendResponse::Chat(response.message));
                                 for output in response.outputs {
-                                    let _ = ui_tx.send(BackendResponse::CommandResult(output));
+                                    let _ =
+                                        ui_tx.send_blocking(BackendResponse::CommandResult(output));
                                 }
                                 for cmd in response.approvals_required {
-                                    let _ = ui_tx.send(BackendResponse::ApprovalRequired(cmd));
+                                    let _ =
+                                        ui_tx.send_blocking(BackendResponse::ApprovalRequired(cmd));
                                 }
                             }
                             Err(e) => {
                                 log::error!("Router error: {}", e);
-                                let _ = ui_tx.send(BackendResponse::Error(e.to_string()));
+                                let _ = ui_tx.send_blocking(BackendResponse::Error(e.to_string()));
                             }
                         }
                     }
                     BackendRequest::ExecuteCommand(cmd) => {
                         log::info!("Executing approved command: {}", cmd);
-                        let _ = ui_tx.send(BackendResponse::Status(
+                        let _ = ui_tx.send_blocking(BackendResponse::Status(
                             "Executing approved command...".to_string(),
                         ));
                         match router.execute_approved_command(&cmd) {
                             Ok(output) => {
-                                let _ = ui_tx.send(BackendResponse::CommandResult(output));
+                                let _ = ui_tx.send_blocking(BackendResponse::CommandResult(output));
                             }
                             Err(e) => {
-                                let _ = ui_tx.send(BackendResponse::Error(e.to_string()));
+                                let _ = ui_tx.send_blocking(BackendResponse::Error(e.to_string()));
                             }
                         }
                     }
                     BackendRequest::GetAgents => {
                         let agents = router.list_agents();
                         let current = router.get_current_provider();
-                        let _ = ui_tx.send(BackendResponse::AgentList { agents, current });
+                        let _ = ui_tx.send_blocking(BackendResponse::AgentList { agents, current });
                     }
                     BackendRequest::SwitchAgent(name) => {
                         log::info!("Switching agent to: {}", name);
-                        let _ = ui_tx.send(BackendResponse::Status(format!(
+                        let _ = ui_tx.send_blocking(BackendResponse::Status(format!(
                             "Switching agent to {}...",
                             name
                         )));
                         match router.switch_agent(&name) {
                             Ok(msg) => {
-                                let _ = ui_tx.send(BackendResponse::AgentSwitched(name));
-                                let _ = ui_tx.send(BackendResponse::Chat(msg));
+                                let _ = ui_tx.send_blocking(BackendResponse::AgentSwitched(name));
+                                let _ = ui_tx.send_blocking(BackendResponse::Chat(msg));
                             }
                             Err(e) => {
-                                let _ = ui_tx.send(BackendResponse::Error(e.to_string()));
+                                let _ = ui_tx.send_blocking(BackendResponse::Error(e.to_string()));
                             }
                         }
                     }
@@ -186,20 +189,20 @@ fn main() {
                             language,
                             framework
                         );
-                        let _ = ui_tx.send(BackendResponse::Status(format!(
+                        let _ = ui_tx.send_blocking(BackendResponse::Status(format!(
                             "Creating project '{}'...",
                             name
                         )));
                         match router.create_project(&name, language, framework) {
                             Ok((success, message, path)) => {
-                                let _ = ui_tx.send(BackendResponse::ProjectCreated {
+                                let _ = ui_tx.send_blocking(BackendResponse::ProjectCreated {
                                     success,
                                     path,
                                     message,
                                 });
                             }
                             Err(e) => {
-                                let _ = ui_tx.send(BackendResponse::ProjectCreated {
+                                let _ = ui_tx.send_blocking(BackendResponse::ProjectCreated {
                                     success: false,
                                     path: None,
                                     message: e.to_string(),
@@ -216,22 +219,25 @@ fn main() {
                             command_type,
                             workspace
                         );
-                        let _ = ui_tx.send(BackendResponse::Status(format!(
+                        let _ = ui_tx.send_blocking(BackendResponse::Status(format!(
                             "Running '{}' in project...",
                             command_type
                         )));
                         match router.run_project_command(&workspace, "general", &command_type) {
                             Ok(response) => {
-                                let _ = ui_tx.send(BackendResponse::Chat(response.message));
+                                let _ =
+                                    ui_tx.send_blocking(BackendResponse::Chat(response.message));
                                 for output in response.outputs {
-                                    let _ = ui_tx.send(BackendResponse::CommandResult(output));
+                                    let _ =
+                                        ui_tx.send_blocking(BackendResponse::CommandResult(output));
                                 }
                                 for cmd in response.approvals_required {
-                                    let _ = ui_tx.send(BackendResponse::ApprovalRequired(cmd));
+                                    let _ =
+                                        ui_tx.send_blocking(BackendResponse::ApprovalRequired(cmd));
                                 }
                             }
                             Err(e) => {
-                                let _ = ui_tx.send(BackendResponse::Error(e.to_string()));
+                                let _ = ui_tx.send_blocking(BackendResponse::Error(e.to_string()));
                             }
                         }
                     }
@@ -240,10 +246,10 @@ fn main() {
                         let _ = openclaw_launcher.stop();
                         match router.emergency_stop() {
                             Ok(msg) => {
-                                let _ = ui_tx.send(BackendResponse::Chat(msg));
+                                let _ = ui_tx.send_blocking(BackendResponse::Chat(msg));
                             }
                             Err(e) => {
-                                let _ = ui_tx.send(BackendResponse::Error(e.to_string()));
+                                let _ = ui_tx.send_blocking(BackendResponse::Error(e.to_string()));
                             }
                         }
                     }

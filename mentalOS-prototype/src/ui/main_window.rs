@@ -29,7 +29,7 @@ impl MainWindow {
     pub fn new(
         app: &Application,
         backend_tx: Sender<BackendRequest>,
-    ) -> (Self, glib::Sender<BackendResponse>) {
+    ) -> (Self, async_channel::Sender<BackendResponse>) {
         let window = ApplicationWindow::builder()
             .application(app)
             .title("mentalOS AIUI")
@@ -128,7 +128,7 @@ impl MainWindow {
         });
 
         // ── Create UI Channel Here (Avoids naming Receiver type) ──
-        let (ui_tx, ui_rx) = glib::MainContext::channel(glib::Priority::DEFAULT);
+        let (ui_tx, ui_rx) = async_channel::unbounded::<BackendResponse>();
 
         // ── Handle Incoming Backend Messages ──
         let chat_ref = chat_view.clone();
@@ -141,107 +141,109 @@ impl MainWindow {
         let agent_selector_syncing = Rc::new(Cell::new(false));
         let agent_selector_syncing_for_rx = agent_selector_syncing.clone();
 
-        ui_rx.attach(None, move |msg| {
-            match msg {
-                BackendResponse::Status(text) => {
-                    notifications_ref.show(&text);
-                    app_bar_ref.set_status("Active");
-                    app_bar_ref.set_busy(true);
-                }
-                BackendResponse::Chat(text) => {
-                    chat_ref.append_message(MessageRole::Ai, &text);
-                    set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
-                    app_bar_ref.set_status("Idle");
-                    app_bar_ref.set_busy(false);
-                }
-                BackendResponse::CommandResult(output) => {
-                    let text = format!(
-                        "Executed: `{}`\nExit Code: {}\nOutput:\n```\n{}\n```",
-                        output.command, output.exit_code, output.stdout
-                    );
-                    chat_ref.append_message(MessageRole::System, &text);
-                    set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
-                    app_bar_ref.set_status("Idle");
-                    app_bar_ref.set_busy(false);
-                }
-                BackendResponse::ApprovalRequired(cmd) => {
-                    set_visual_state(&root_ref, &pill_ref, AiState::Learn);
-                    app_bar_ref.set_status("Approval");
-                    app_bar_ref.set_busy(false);
-                    let tx = backend_tx_clone.clone();
-                    let cmd_clone = cmd.clone();
-                    ApprovalDialog::show(&win_ref, &cmd, move |decision| match decision {
-                        ApprovalDecision::ApproveOnce => {
-                            let _ =
-                                tx.blocking_send(BackendRequest::ExecuteCommand(cmd_clone.clone()));
-                        }
-                        _ => {
-                            info!("Command denied: {}", cmd_clone);
-                        }
-                    });
-                }
-                BackendResponse::Error(err) => {
-                    chat_ref.append_message(MessageRole::System, &format!("Error: {}", err));
-                    set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
-                    app_bar_ref.set_status("Error");
-                    app_bar_ref.set_busy(false);
-                }
-                BackendResponse::AgentList { agents, current } => {
-                    update_agent_list(
-                        &pill_ref.agent_selector,
-                        &agents,
-                        &current,
-                        &agent_selector_syncing_for_rx,
-                    );
-                }
-                BackendResponse::AgentSwitched(name) => {
-                    info!("Switched active agent to: {}", name);
-                }
-                BackendResponse::ProjectConfirmationRequired {
-                    name,
-                    language,
-                    framework,
-                } => {
-                    let tx = backend_tx_clone.clone();
-                    let name_clone = name.clone();
-                    let lang_clone = language.clone();
-                    let fw_clone = framework.clone();
-                    ProjectDialog::show(
-                        &win_ref,
-                        &name,
-                        language.as_deref(),
-                        framework.as_deref(),
-                        move |decision| match decision {
-                            ProjectDecision::Create => {
-                                let _ = tx.blocking_send(BackendRequest::CreateProject {
-                                    name: name_clone.clone(),
-                                    language: lang_clone.clone(),
-                                    framework: fw_clone.clone(),
-                                });
+        glib::MainContext::default().spawn_local(async move {
+            while let Ok(msg) = ui_rx.recv().await {
+                match msg {
+                    BackendResponse::Status(text) => {
+                        notifications_ref.show(&text);
+                        app_bar_ref.set_status("Active");
+                        app_bar_ref.set_busy(true);
+                    }
+                    BackendResponse::Chat(text) => {
+                        chat_ref.append_message(MessageRole::Ai, &text);
+                        set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+                        app_bar_ref.set_status("Idle");
+                        app_bar_ref.set_busy(false);
+                    }
+                    BackendResponse::CommandResult(output) => {
+                        let text = format!(
+                            "Executed: `{}`\nExit Code: {}\nOutput:\n```\n{}\n```",
+                            output.command, output.exit_code, output.stdout
+                        );
+                        chat_ref.append_message(MessageRole::System, &text);
+                        set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+                        app_bar_ref.set_status("Idle");
+                        app_bar_ref.set_busy(false);
+                    }
+                    BackendResponse::ApprovalRequired(cmd) => {
+                        set_visual_state(&root_ref, &pill_ref, AiState::Learn);
+                        app_bar_ref.set_status("Approval");
+                        app_bar_ref.set_busy(false);
+                        let tx = backend_tx_clone.clone();
+                        let cmd_clone = cmd.clone();
+                        ApprovalDialog::show(&win_ref, &cmd, move |decision| match decision {
+                            ApprovalDecision::ApproveOnce => {
+                                let _ = tx.blocking_send(BackendRequest::ExecuteCommand(
+                                    cmd_clone.clone(),
+                                ));
                             }
-                            ProjectDecision::Cancel => {
-                                info!("Project creation cancelled: {}", name_clone);
+                            _ => {
+                                info!("Command denied: {}", cmd_clone);
                             }
-                        },
-                    );
-                }
-                BackendResponse::ProjectCreated {
-                    success,
-                    path: _,
-                    message,
-                } => {
-                    let text = if success {
-                        format!("Project created: {}", message)
-                    } else {
-                        format!("Project creation failed: {}", message)
-                    };
-                    chat_ref.append_message(MessageRole::System, &text);
-                    set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
-                    app_bar_ref.set_status("Idle");
-                    app_bar_ref.set_busy(false);
+                        });
+                    }
+                    BackendResponse::Error(err) => {
+                        chat_ref.append_message(MessageRole::System, &format!("Error: {}", err));
+                        set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+                        app_bar_ref.set_status("Error");
+                        app_bar_ref.set_busy(false);
+                    }
+                    BackendResponse::AgentList { agents, current } => {
+                        update_agent_list(
+                            &pill_ref.agent_selector,
+                            &agents,
+                            &current,
+                            &agent_selector_syncing_for_rx,
+                        );
+                    }
+                    BackendResponse::AgentSwitched(name) => {
+                        info!("Switched active agent to: {}", name);
+                    }
+                    BackendResponse::ProjectConfirmationRequired {
+                        name,
+                        language,
+                        framework,
+                    } => {
+                        let tx = backend_tx_clone.clone();
+                        let name_clone = name.clone();
+                        let lang_clone = language.clone();
+                        let fw_clone = framework.clone();
+                        ProjectDialog::show(
+                            &win_ref,
+                            &name,
+                            language.as_deref(),
+                            framework.as_deref(),
+                            move |decision| match decision {
+                                ProjectDecision::Create => {
+                                    let _ = tx.blocking_send(BackendRequest::CreateProject {
+                                        name: name_clone.clone(),
+                                        language: lang_clone.clone(),
+                                        framework: fw_clone.clone(),
+                                    });
+                                }
+                                ProjectDecision::Cancel => {
+                                    info!("Project creation cancelled: {}", name_clone);
+                                }
+                            },
+                        );
+                    }
+                    BackendResponse::ProjectCreated {
+                        success,
+                        path: _,
+                        message,
+                    } => {
+                        let text = if success {
+                            format!("Project created: {}", message)
+                        } else {
+                            format!("Project creation failed: {}", message)
+                        };
+                        chat_ref.append_message(MessageRole::System, &text);
+                        set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+                        app_bar_ref.set_status("Idle");
+                        app_bar_ref.set_busy(false);
+                    }
                 }
             }
-            glib::ControlFlow::Continue
         });
 
         // ── Input submit (Enter key) ──

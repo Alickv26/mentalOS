@@ -87,6 +87,7 @@ Defaults (user-editable in Manage Shortcuts):
 - GTK accessibility smoke tests:
   - `cargo test -q --test ui_accessibility`
 - Coverage report (target: >=80% lines):
+  - `./scripts/coverage.sh`
   - `cargo llvm-cov --workspace --all-features --summary-only --fail-under-lines 80`
 - Manual performance benchmarks:
   - `./scripts/perf_bench.sh`

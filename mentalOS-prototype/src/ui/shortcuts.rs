@@ -318,6 +318,46 @@ fn key_matches(token: &str, key: gdk::Key, shift: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard};
+    use tempfile::tempdir;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvOverride {
+        _guard: MutexGuard<'static, ()>,
+        old_xdg_config_home: Option<String>,
+    }
+
+    impl EnvOverride {
+        fn xdg_config_home(path: &std::path::Path) -> Self {
+            let guard = ENV_LOCK
+                .lock()
+                .expect("environment lock should not be poisoned");
+            let old_xdg_config_home = std::env::var("XDG_CONFIG_HOME").ok();
+
+            // SAFETY: tests hold ENV_LOCK for the full override lifetime.
+            unsafe {
+                std::env::set_var("XDG_CONFIG_HOME", path);
+            }
+
+            Self {
+                _guard: guard,
+                old_xdg_config_home,
+            }
+        }
+    }
+
+    impl Drop for EnvOverride {
+        fn drop(&mut self) {
+            // SAFETY: tests hold ENV_LOCK for the full override lifetime.
+            unsafe {
+                match &self.old_xdg_config_home {
+                    Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),
+                    None => std::env::remove_var("XDG_CONFIG_HOME"),
+                }
+            }
+        }
+    }
 
     #[test]
     fn slash_shortcut_matches_question_key() {
@@ -396,5 +436,42 @@ mod tests {
     fn missing_binding_falls_back_to_default() {
         let bindings = ShortcutBindings::default();
         assert_eq!(bindings.get("missing_action"), "Ctrl+K");
+    }
+
+    #[test]
+    fn shortcuts_round_trip_save_and_load_from_temp_config_dir() {
+        let temp = tempdir().expect("temp dir should be created");
+        let _env = EnvOverride::xdg_config_home(temp.path());
+
+        let mut bindings = ShortcutBindings::default();
+        bindings.set("show_help", "Ctrl+Question");
+        let saved_path = bindings.save().expect("shortcuts should be saved");
+        assert!(saved_path.exists(), "saved shortcuts file should exist");
+
+        let loaded = ShortcutBindings::load_or_default().expect("shortcuts should load");
+        assert_eq!(loaded.get("show_help"), "Ctrl+Question");
+    }
+
+    #[test]
+    fn loading_partial_shortcuts_file_fills_missing_defaults() {
+        let temp = tempdir().expect("temp dir should be created");
+        let _env = EnvOverride::xdg_config_home(temp.path());
+
+        let path = shortcuts_path().expect("shortcuts path should resolve");
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("shortcuts parent should be created");
+        }
+        std::fs::write(
+            &path,
+            r#"
+[bindings]
+show_help = "Ctrl+Question"
+"#,
+        )
+        .expect("partial shortcuts file should be written");
+
+        let loaded = ShortcutBindings::load_or_default().expect("shortcuts should load");
+        assert_eq!(loaded.get("show_help"), "Ctrl+Question");
+        assert_eq!(loaded.get("manage_shortcuts"), "Ctrl+Comma");
     }
 }

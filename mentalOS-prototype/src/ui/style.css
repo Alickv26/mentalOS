@@ -147,6 +147,20 @@ window {
     color: #a9b1d6;
 }
 
+.notification-info {
+    border-color: rgba(122, 162, 247, 0.35);
+}
+
+.notification-warning {
+    border-color: rgba(224, 175, 104, 0.55);
+    color: #e0af68;
+}
+
+.notification-error {
+    border-color: rgba(247, 118, 142, 0.55);
+    color: #f7768e;
+}
+
 .omni-entry {
     background-color: transparent;
     border: none;
@@ -186,6 +200,11 @@ window {
     padding: 8px 12px;
     margin: 4px 0;
     border-radius: 12px;
+}
+
+.message-role {
+    color: #a9b1d6;
+    font-size: 12px;
 }
 
 .user-message {
@@ -240,4 +259,12 @@ window {
     box-shadow: none;
     margin-right: 8px;
     min-width: 100px;
+}
+
+.shortcut-status-ok {
+    color: #9ece6a;
+}
+
+.shortcut-status-error {
+    color: #f7768e;
 }

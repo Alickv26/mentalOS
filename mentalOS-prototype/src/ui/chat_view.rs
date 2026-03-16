@@ -31,14 +31,7 @@ impl ChatView {
             gtk4::accessible::Property::MultiLine(true),
         ]);
 
-        // Welcome message
-        let welcome = Label::new(Some("Welcome to mentalOS"));
-        welcome.add_css_class("welcome-label");
-        message_list.append(&welcome);
-
-        let hint = Label::new(Some("Type a message below to get started."));
-        hint.add_css_class("welcome-hint");
-        message_list.append(&hint);
+        append_welcome_rows(&message_list);
 
         let scroll = ScrolledWindow::builder()
             .hscrollbar_policy(PolicyType::Never)
@@ -79,7 +72,8 @@ impl ChatView {
         ]);
 
         // Role label
-        let role_label = Label::new(Some(role_text));
+        let role_header = format_role_header(role_text, &current_time_label());
+        let role_label = Label::new(Some(&role_header));
         role_label.add_css_class("message-role");
         role_label.add_css_class(role_class);
         role_label.set_halign(gtk4::Align::Start);
@@ -116,6 +110,7 @@ impl ChatView {
         while let Some(child) = self.message_list.first_child() {
             self.message_list.remove(&child);
         }
+        append_welcome_rows(&self.message_list);
     }
 
     fn scroll_to_bottom(&self) {
@@ -128,6 +123,24 @@ impl ChatView {
             });
         });
     }
+}
+
+fn append_welcome_rows(message_list: &Box) {
+    let welcome = Label::new(Some("Welcome to mentalOS"));
+    welcome.add_css_class("welcome-label");
+    message_list.append(&welcome);
+
+    let hint = Label::new(Some("Type a message below to get started."));
+    hint.add_css_class("welcome-hint");
+    message_list.append(&hint);
+}
+
+fn current_time_label() -> String {
+    chrono::Local::now().format("%H:%M").to_string()
+}
+
+fn format_role_header(role: &str, time_label: &str) -> String {
+    format!("{role} · {time_label}")
 }
 
 // ── Simple code-block splitter ───────────────────────────────
@@ -175,4 +188,25 @@ fn split_code_blocks(content: &str) -> Vec<ContentPart> {
     }
 
     parts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_role_header_contains_role_and_time() {
+        let header = format_role_header("AI", "14:23");
+        assert_eq!(header, "AI · 14:23");
+    }
+
+    #[test]
+    fn split_code_blocks_handles_plain_text() {
+        let parts = split_code_blocks("hello world");
+        assert_eq!(parts.len(), 1);
+        match &parts[0] {
+            ContentPart::Text(v) => assert_eq!(v, "hello world"),
+            ContentPart::Code(_) => panic!("expected text part"),
+        }
+    }
 }

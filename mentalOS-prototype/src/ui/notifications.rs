@@ -11,6 +11,13 @@ pub struct NotificationCenter {
     generation: Rc<Cell<u64>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationLevel {
+    Info,
+    Warning,
+    Error,
+}
+
 impl NotificationCenter {
     pub fn new() -> Self {
         let label = Label::new(None);
@@ -33,6 +40,19 @@ impl NotificationCenter {
     }
 
     pub fn show(&self, message: &str) {
+        self.show_with_level(message, NotificationLevel::Info);
+    }
+
+    pub fn show_warning(&self, message: &str) {
+        self.show_with_level(message, NotificationLevel::Warning);
+    }
+
+    pub fn show_error(&self, message: &str) {
+        self.show_with_level(message, NotificationLevel::Error);
+    }
+
+    pub fn show_with_level(&self, message: &str, level: NotificationLevel) {
+        apply_level_css_class(&self.label, level);
         self.label.set_text(message);
         self.container.set_reveal_child(true);
 
@@ -51,5 +71,45 @@ impl NotificationCenter {
         let id = self.generation.get().wrapping_add(1);
         self.generation.set(id);
         self.container.set_reveal_child(false);
+    }
+}
+
+fn level_css_class(level: NotificationLevel) -> &'static str {
+    match level {
+        NotificationLevel::Info => "notification-info",
+        NotificationLevel::Warning => "notification-warning",
+        NotificationLevel::Error => "notification-error",
+    }
+}
+
+fn apply_level_css_class(label: &Label, level: NotificationLevel) {
+    for class in [
+        "notification-info",
+        "notification-warning",
+        "notification-error",
+    ] {
+        label.remove_css_class(class);
+    }
+    label.add_css_class(level_css_class(level));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn level_css_class_mappings_are_stable() {
+        assert_eq!(
+            level_css_class(NotificationLevel::Info),
+            "notification-info"
+        );
+        assert_eq!(
+            level_css_class(NotificationLevel::Warning),
+            "notification-warning"
+        );
+        assert_eq!(
+            level_css_class(NotificationLevel::Error),
+            "notification-error"
+        );
     }
 }

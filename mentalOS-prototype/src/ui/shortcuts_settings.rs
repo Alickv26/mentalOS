@@ -149,6 +149,8 @@ impl ShortcutsSettings {
                     entry.set_text(def.default);
                 }
             }
+            status_for_reset.remove_css_class(status_class_for_result(true));
+            status_for_reset.remove_css_class(status_class_for_result(false));
             status_for_reset.set_text("Defaults restored in form. Click Save to persist.");
         });
 
@@ -162,6 +164,8 @@ impl ShortcutsSettings {
             let updated = match apply_shortcut_form_values(&state_for_save.borrow(), &form_values) {
                 Ok(v) => v,
                 Err(err) => {
+                    status_for_save.remove_css_class(status_class_for_result(true));
+                    status_for_save.add_css_class(status_class_for_result(false));
                     status_for_save.set_text(&format!("Invalid shortcut: {}", err));
                     return;
                 }
@@ -171,9 +175,13 @@ impl ShortcutsSettings {
                 Ok(path) => {
                     *state_for_save.borrow_mut() = updated.clone();
                     on_saved(updated);
+                    status_for_save.remove_css_class(status_class_for_result(false));
+                    status_for_save.add_css_class(status_class_for_result(true));
                     status_for_save.set_text(&format!("Saved shortcuts to {}", path.display()));
                 }
                 Err(err) => {
+                    status_for_save.remove_css_class(status_class_for_result(true));
+                    status_for_save.add_css_class(status_class_for_result(false));
                     status_for_save.set_text(&format!("Failed to save shortcuts: {}", err));
                 }
             }
@@ -227,6 +235,14 @@ fn apply_shortcut_form_values(
     Ok(updated)
 }
 
+fn status_class_for_result(ok: bool) -> &'static str {
+    if ok {
+        "shortcut-status-ok"
+    } else {
+        "shortcut-status-error"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,5 +269,11 @@ mod tests {
         form_values.insert("show_help".to_string(), "Ctrl".to_string());
 
         assert!(apply_shortcut_form_values(&current, &form_values).is_err());
+    }
+
+    #[test]
+    fn status_class_mapping_is_stable() {
+        assert_eq!(status_class_for_result(true), "shortcut-status-ok");
+        assert_eq!(status_class_for_result(false), "shortcut-status-error");
     }
 }

@@ -27,9 +27,17 @@ impl ShortcutsHelp {
         title.add_css_class("app-bar-title");
         root.append(&title);
 
+        let total = Label::new(Some(&format!(
+            "{} actions available",
+            SHORTCUT_DEFINITIONS.len()
+        )));
+        total.set_halign(gtk4::Align::Start);
+        total.add_css_class("app-bar-stats");
+        root.append(&total);
+
         for def in SHORTCUT_DEFINITIONS {
             let combo = bindings.get(def.id);
-            let line = format!("{:<18} {} — {}", combo, def.label, def.description);
+            let line = format_shortcut_line(&combo, def.label, def.description);
             let label = Label::new(Some(&line));
             label.set_halign(gtk4::Align::Start);
             label.add_css_class("message-content");
@@ -63,5 +71,22 @@ impl ShortcutsHelp {
         dialog.add_controller(key_ctrl);
 
         dialog.present();
+    }
+}
+
+fn format_shortcut_line(combo: &str, label: &str, description: &str) -> String {
+    format!("{combo:<18} {label} — {description}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_shortcut_line;
+
+    #[test]
+    fn shortcut_line_keeps_combo_prefix() {
+        let line = format_shortcut_line("Ctrl+K", "Open app launcher", "Open apps dialog");
+        assert!(line.starts_with("Ctrl+K"));
+        assert!(line.contains("Open app launcher"));
+        assert!(line.contains("Open apps dialog"));
     }
 }

@@ -183,6 +183,7 @@ impl MainWindow {
                         });
                     }
                     BackendResponse::Error(err) => {
+                        notifications_ref.show_error(&err);
                         chat_ref.append_message(MessageRole::System, &format!("Error: {}", err));
                         set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
                         app_bar_ref.set_status("Error");

@@ -11,9 +11,14 @@ pub struct AppBar {
     status_label: Label,
     _cpu_label: Label,
     _mem_label: Label,
+    memory_btn: Button,
     stop_btn: Button,
     progress: ProgressBar,
     busy: Rc<Cell<bool>>,
+}
+
+fn memory_button_label() -> &'static str {
+    "Memory"
 }
 
 impl AppBar {
@@ -62,6 +67,16 @@ impl AppBar {
         ]);
         row.append(&mem_label);
 
+        // ── Memory button ──
+        let memory_btn = Button::with_label(memory_button_label());
+        memory_btn.add_css_class("icon-button");
+        memory_btn.update_property(&[
+            gtk4::accessible::Property::Label("Open memory browser"),
+            gtk4::accessible::Property::Description("Browse recent conversation sessions."),
+            gtk4::accessible::Property::KeyShortcuts("Ctrl+Shift+M"),
+        ]);
+        row.append(&memory_btn);
+
         // ── Stop button ──
         let stop_btn = Button::with_label("🔴 STOP");
         stop_btn.add_css_class("stop-button");
@@ -91,6 +106,7 @@ impl AppBar {
             status_label,
             _cpu_label: cpu_label.clone(),
             _mem_label: mem_label.clone(),
+            memory_btn: memory_btn.clone(),
             stop_btn: stop_btn.clone(),
             progress: progress.clone(),
             busy: busy.clone(),
@@ -150,6 +166,10 @@ impl AppBar {
         self.stop_btn.connect_clicked(f);
     }
 
+    pub fn connect_memory_clicked<F: Fn(&Button) + 'static>(&self, f: F) {
+        self.memory_btn.connect_clicked(f);
+    }
+
     pub fn set_busy(&self, busy: bool) {
         self.busy.set(busy);
         self.progress.set_visible(busy);
@@ -158,5 +178,15 @@ impl AppBar {
         } else {
             self.progress.set_fraction(0.0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::memory_button_label;
+
+    #[test]
+    fn memory_button_label_is_stable() {
+        assert_eq!(memory_button_label(), "Memory");
     }
 }

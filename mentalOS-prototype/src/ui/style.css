@@ -109,6 +109,12 @@ window {
     font-weight: 700;
 }
 
+.app-bar .icon-button {
+    color: #a9b1d6;
+    padding: 6px 10px;
+    border-radius: 8px;
+}
+
 .app-bar-status {
     color: #9ece6a;
 }

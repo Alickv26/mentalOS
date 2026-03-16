@@ -127,6 +127,11 @@ impl MainWindow {
             set_visual_state(&root_ref_for_stop, &pill_ref_for_stop, AiState::Sleep);
         });
 
+        let win_for_memory = window.clone();
+        app_bar.connect_memory_clicked(move |_| {
+            MemoryBrowser::show(&win_for_memory, "default");
+        });
+
         // ── Create UI Channel Here (Avoids naming Receiver type) ──
         let (ui_tx, ui_rx) = async_channel::unbounded::<BackendResponse>();
 

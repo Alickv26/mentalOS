@@ -27,11 +27,17 @@ impl MemoryBrowser {
         title.add_css_class("app-bar-title");
         root.append(&title);
 
+        let summary = Label::new(None);
+        summary.set_halign(gtk4::Align::Start);
+        summary.add_css_class("app-bar-stats");
+        root.append(&summary);
+
         let list_box = Box::new(Orientation::Vertical, 6);
 
         let manager = MemoryManager::new(default_workspace_root());
         match manager.list_sessions(workspace) {
             Ok(sessions) if !sessions.is_empty() => {
+                summary.set_text(&format_session_summary(sessions.len()));
                 for session in sessions.into_iter().take(30) {
                     let row = Box::new(Orientation::Vertical, 2);
                     row.add_css_class("message-row");
@@ -61,12 +67,14 @@ impl MemoryBrowser {
                 }
             }
             Ok(_) => {
+                summary.set_text("No sessions found");
                 let empty = Label::new(Some("No conversations saved yet."));
                 empty.add_css_class("welcome-hint");
                 empty.set_halign(gtk4::Align::Start);
                 list_box.append(&empty);
             }
             Err(err) => {
+                summary.set_text("Failed to load sessions");
                 let error = Label::new(Some(&format!("Failed to load memory: {}", err)));
                 error.add_css_class("welcome-hint");
                 error.set_halign(gtk4::Align::Start);
@@ -92,4 +100,23 @@ fn default_workspace_root() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/tmp"));
     home.join("workspaces")
+}
+
+fn format_session_summary(count: usize) -> String {
+    if count == 1 {
+        "Showing 1 session".to_string()
+    } else {
+        format!("Showing {count} sessions")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_session_summary;
+
+    #[test]
+    fn summary_pluralization_is_correct() {
+        assert_eq!(format_session_summary(1), "Showing 1 session");
+        assert_eq!(format_session_summary(4), "Showing 4 sessions");
+    }
 }

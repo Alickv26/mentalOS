@@ -161,9 +161,20 @@ impl ShortcutsSettings {
 
         save_btn.connect_clicked(move |_| {
             let form_values = collect_form_values(&entry_map_for_save.borrow());
+            for entry in entry_map_for_save.borrow().values() {
+                set_entry_validation_state(entry, true);
+            }
             let updated = match apply_shortcut_form_values(&state_for_save.borrow(), &form_values) {
                 Ok(v) => v,
                 Err(err) => {
+                    if let Some((action_id, _)) =
+                        extract_action_id_from_validation_error(&err.to_string())
+                    {
+                        if let Some(entry) = entry_map_for_save.borrow().get(action_id) {
+                            set_entry_validation_state(entry, false);
+                            entry.grab_focus();
+                        }
+                    }
                     status_for_save.remove_css_class(status_class_for_result(true));
                     status_for_save.add_css_class(status_class_for_result(false));
                     status_for_save.set_text(&format!("Invalid shortcut: {}", err));
@@ -243,6 +254,30 @@ fn status_class_for_result(ok: bool) -> &'static str {
     }
 }
 
+fn validation_entry_css_class(valid: bool) -> Option<&'static str> {
+    if valid {
+        None
+    } else {
+        Some("shortcut-entry-error")
+    }
+}
+
+fn set_entry_validation_state(entry: &Entry, valid: bool) {
+    entry.remove_css_class("shortcut-entry-error");
+    if let Some(class) = validation_entry_css_class(valid) {
+        entry.add_css_class(class);
+    }
+}
+
+fn extract_action_id_from_validation_error(message: &str) -> Option<(&str, &str)> {
+    for def in SHORTCUT_DEFINITIONS {
+        if message.contains(def.label) {
+            return Some((def.id, def.label));
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,5 +310,21 @@ mod tests {
     fn status_class_mapping_is_stable() {
         assert_eq!(status_class_for_result(true), "shortcut-status-ok");
         assert_eq!(status_class_for_result(false), "shortcut-status-error");
+    }
+
+    #[test]
+    fn validation_class_mapping_is_stable() {
+        assert_eq!(validation_entry_css_class(true), None);
+        assert_eq!(
+            validation_entry_css_class(false),
+            Some("shortcut-entry-error")
+        );
+    }
+
+    #[test]
+    fn extract_action_id_from_validation_error_finds_definition() {
+        let msg = "Show shortcuts help -> config is invalid";
+        let action = extract_action_id_from_validation_error(msg);
+        assert_eq!(action.map(|v| v.0), Some("show_help"));
     }
 }

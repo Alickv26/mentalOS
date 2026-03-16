@@ -139,7 +139,7 @@ fn populate_list(list_box: &Box, entries: &[DesktopEntry], query: &str) {
 
     let query_lower = query.to_lowercase();
     for entry in entries {
-        if !query.is_empty() && !entry.name.to_lowercase().contains(&query_lower) {
+        if !query.is_empty() && !matches_entry_query(entry, &query_lower) {
             continue;
         }
 
@@ -170,7 +170,12 @@ fn populate_list(list_box: &Box, entries: &[DesktopEntry], query: &str) {
     }
 
     if list_box.first_child().is_none() {
-        let empty = Label::new(Some("No applications found."));
+        let message = if query.trim().is_empty() {
+            "No applications found.".to_string()
+        } else {
+            format!("No applications found for '{query}'.")
+        };
+        let empty = Label::new(Some(&message));
         empty.add_css_class("welcome-hint");
         empty.set_margin_top(20);
         list_box.append(&empty);
@@ -180,11 +185,7 @@ fn populate_list(list_box: &Box, entries: &[DesktopEntry], query: &str) {
 /// Launch an application by its Exec string.
 fn launch_app(exec: &str) {
     // Strip field codes (%f, %F, %u, %U, etc.)
-    let clean: String = exec
-        .split_whitespace()
-        .filter(|token| !token.starts_with('%'))
-        .collect::<Vec<_>>()
-        .join(" ");
+    let clean = clean_exec_command(exec);
 
     info!("Launching app: {clean}");
 
@@ -201,6 +202,19 @@ fn launch_app(exec: &str) {
             Err(err) => log::warn!("Failed to launch {program}: {err}"),
         }
     }
+}
+
+fn clean_exec_command(exec: &str) -> String {
+    exec.split_whitespace()
+        .filter(|token| !token.starts_with('%'))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn matches_entry_query(entry: &DesktopEntry, query_lower: &str) -> bool {
+    entry.name.to_lowercase().contains(query_lower)
+        || entry.comment.to_lowercase().contains(query_lower)
+        || entry.exec.to_lowercase().contains(query_lower)
 }
 
 /// Read .desktop files from standard directories and return sorted entries.
@@ -306,5 +320,29 @@ fn try_spawn_terminal_command(command: &str) -> Result<bool, String> {
         }
         Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
         Err(err) => Err(format!("Failed launching $TERMINAL '{}': {}", command, err)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clean_exec_command_strips_desktop_field_tokens() {
+        let cleaned = clean_exec_command("code %F --reuse-window %u");
+        assert_eq!(cleaned, "code --reuse-window");
+    }
+
+    #[test]
+    fn query_matches_name_comment_and_exec() {
+        let entry = DesktopEntry {
+            name: "Firefox".to_string(),
+            exec: "firefox %u".to_string(),
+            comment: "Web Browser".to_string(),
+        };
+        assert!(matches_entry_query(&entry, "fire"));
+        assert!(matches_entry_query(&entry, "browser"));
+        assert!(matches_entry_query(&entry, "firefox"));
+        assert!(!matches_entry_query(&entry, "terminal"));
     }
 }

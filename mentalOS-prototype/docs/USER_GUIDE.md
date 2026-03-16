@@ -31,6 +31,7 @@ Wizard fields:
 - Ask requests in natural language in the input field.
 - The app shows status/progress while backend work is in-flight.
 - AI and system messages appear in chat history.
+- Chat message headers include role and local time (`Role · HH:MM`).
 - Command outputs are rendered in chat.
 
 ## Safety and Approvals
@@ -43,6 +44,12 @@ Wizard fields:
 
 - Use the top input-row agent selector to switch between available agents.
 - The current active agent is synced from backend state.
+
+## Launcher Search
+
+- Open launcher with `Ctrl+K`.
+- Search matches app name, description, and exec command.
+- If no match is found, the empty state includes your search text.
 
 ## Keyboard Shortcuts
 
@@ -70,6 +77,7 @@ Help fallback keys for layout differences:
 
 - Automatically shown for first-time setup.
 - Reopen anytime with `Ctrl+Shift+T`.
+- Step header includes completion percentage.
 - Progress is stored in `~/.config/mentalOS/onboarding.toml`.
 
 ## Manage Shortcuts

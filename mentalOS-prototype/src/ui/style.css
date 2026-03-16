@@ -268,3 +268,7 @@ window {
 .shortcut-status-error {
     color: #f7768e;
 }
+
+.shortcut-entry-error {
+    box-shadow: inset 0 0 0 2px rgba(247, 118, 142, 0.9);
+}

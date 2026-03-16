@@ -128,7 +128,7 @@ impl OnboardingTutorial {
         let update_ui = Rc::new(move || {
             let i = index_for_update.get().min(STEPS.len().saturating_sub(1));
             let step = &STEPS[i];
-            step_label_ref.set_text(&format!("Step {}/{}", i + 1, STEPS.len()));
+            step_label_ref.set_text(&step_progress_text(i, STEPS.len()));
             title_label_ref.set_text(step.title);
             body_label_ref.set_text(step.body);
             back_btn_ref.set_sensitive(i > 0);
@@ -245,4 +245,21 @@ fn mark_completed() -> Result<PathBuf> {
     })?;
     fs::write(&path, serialized)?;
     Ok(path)
+}
+
+fn step_progress_text(index: usize, total: usize) -> String {
+    let step = index.saturating_add(1).min(total.max(1));
+    let pct = ((step as f64 / total.max(1) as f64) * 100.0).round() as u32;
+    format!("Step {step}/{total} ({pct}%)")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::step_progress_text;
+
+    #[test]
+    fn progress_text_includes_percentage() {
+        assert_eq!(step_progress_text(0, 5), "Step 1/5 (20%)");
+        assert_eq!(step_progress_text(4, 5), "Step 5/5 (100%)");
+    }
 }

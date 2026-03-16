@@ -60,6 +60,10 @@ If save fails:
    - `ls -ld ~/.config/mentalOS`
 3. Share exact status message in bug report
 
+Tip:
+
+- Invalid shortcut fields are highlighted with a red outline.
+
 ## Terminal button does nothing
 
 The launcher tries common terminal binaries. If all are missing, you get a

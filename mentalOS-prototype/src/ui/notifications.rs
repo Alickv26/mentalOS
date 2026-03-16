@@ -32,10 +32,21 @@ impl NotificationCenter {
         revealer.set_child(Some(&label));
         revealer.add_css_class("notification-wrap");
 
+        let click = gtk4::GestureClick::new();
+        let revealer_for_click = revealer.clone();
+        let generation_for_click = Rc::new(Cell::new(0_u64));
+        let generation_for_click_ref = generation_for_click.clone();
+        click.connect_pressed(move |_, _, _, _| {
+            let id = generation_for_click_ref.get().wrapping_add(1);
+            generation_for_click_ref.set(id);
+            revealer_for_click.set_reveal_child(false);
+        });
+        revealer.add_controller(click);
+
         Self {
             container: revealer,
             label,
-            generation: Rc::new(Cell::new(0)),
+            generation: generation_for_click,
         }
     }
 

@@ -12,15 +12,28 @@ pub enum BackendRequest {
     /// Use this to forward an approval decision back to the backend
     /// (requires more complex logic, for now we just re-submit or handle locally).
     /// actually, for M0.4 we might just need to re-execute the command if approved?
-    /// Or better, the backend pauses? 
+    /// Or better, the backend pauses?
     /// Simple approach: The backend returns "NeedsApproval(cmd)".
     /// If UI approves, UI sends "Execute(cmd)".
     /// Execute a command (user approved).
     ExecuteCommand(String),
+    /// Immediately stop all AI/backend operations.
+    EmergencyStop,
     /// Request the list of available agents.
     GetAgents,
     /// Request to switch the active agent.
     SwitchAgent(String),
+    /// Request to create a project (user confirmed).
+    CreateProject {
+        name: String,
+        language: Option<String>,
+        framework: Option<String>,
+    },
+    /// Request project command execution (run, test, setup).
+    RunProjectCommand {
+        workspace: String,
+        command_type: String,
+    },
 }
 
 /// Responses sent from the Backend to the UI.
@@ -41,4 +54,16 @@ pub enum BackendResponse {
     },
     /// Confirmation that the agent was switched.
     AgentSwitched(String),
+    /// Project creation requires confirmation.
+    ProjectConfirmationRequired {
+        name: String,
+        language: Option<String>,
+        framework: Option<String>,
+    },
+    /// Project creation result.
+    ProjectCreated {
+        success: bool,
+        path: Option<String>,
+        message: String,
+    },
 }

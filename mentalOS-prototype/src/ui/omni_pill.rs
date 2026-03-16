@@ -60,9 +60,7 @@ impl OmniPill {
 
         // Agent Selector (Dropdown)
         let model = StringList::new(&["Loading..."]);
-        let agent_selector = DropDown::builder()
-            .model(&model)
-            .build();
+        let agent_selector = DropDown::builder().model(&model).build();
         agent_selector.add_css_class("agent-selector");
         container.append(&agent_selector);
 

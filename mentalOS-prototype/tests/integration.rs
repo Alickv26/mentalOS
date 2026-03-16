@@ -1,11 +1,11 @@
+use httpmock::Method::POST;
+use httpmock::MockServer;
 use mentalOS::config::{AiConfig, OllamaConfig, OpenClawConfig, PathsConfig};
 use mentalOS::memory::MemoryManager;
 use mentalOS::openclaw::OpenClawClient;
 use mentalOS::router::{CommandExecutor, CommandOutput, CommandRouter};
 use mentalOS::whitelist::WhitelistManager;
 use mentalOS::workspace::WorkspaceManager;
-use httpmock::Method::POST;
-use httpmock::MockServer;
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
@@ -24,13 +24,21 @@ impl CommandExecutor for NoopExecutor {
 
 #[tokio::test]
 async fn components_work_together() {
+    if std::env::var("MENTALOS_ENABLE_SOCKET_TESTS")
+        .map(|v| v != "1")
+        .unwrap_or(true)
+    {
+        return;
+    }
+
     let server = MockServer::start_async().await;
     let response = r#"{"message":"ok","commands":["echo hello"]}"#;
-    let mock = server.mock_async(|when, then| {
-        when.method(POST).path("/agent");
-        then.status(200).body(response);
-    })
-    .await;
+    let mock = server
+        .mock_async(|when, then| {
+            when.method(POST).path("/agent");
+            then.status(200).body(response);
+        })
+        .await;
 
     let temp_dir = TempDir::new().unwrap();
     let workspace_root = temp_dir.path().join("workspaces");

@@ -54,6 +54,25 @@ window {
     border-radius: 24px;
 }
 
+/* ─── App Bar ───────────────────────────────── */
+.app-bar {
+    padding: 8px 16px 4px 16px;
+    border-bottom: 1px solid rgba(86, 95, 137, 0.35);
+}
+
+.app-bar-title {
+    font-weight: 700;
+}
+
+.app-bar-status {
+    color: #9ece6a;
+}
+
+.app-bar-stats {
+    color: #a9b1d6;
+    font-size: 12px;
+}
+
 .omni-entry {
     background-color: transparent;
     border: none;

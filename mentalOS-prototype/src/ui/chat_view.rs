@@ -1,6 +1,7 @@
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Box, Label, Orientation, PolicyType, ScrolledWindow};
+use std::time::Duration;
 
 /// Enum representing who sent a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,12 +88,7 @@ impl ChatView {
         }
 
         self.message_list.append(&row);
-
-        // Auto-scroll to bottom
-        let adj = self.container.vadjustment();
-        glib::idle_add_local_once(move || {
-            adj.set_value(adj.upper() - adj.page_size());
-        });
+        self.scroll_to_bottom();
     }
 
     /// Remove all messages from the chat view.
@@ -100,6 +96,17 @@ impl ChatView {
         while let Some(child) = self.message_list.first_child() {
             self.message_list.remove(&child);
         }
+    }
+
+    fn scroll_to_bottom(&self) {
+        let adj = self.container.vadjustment();
+        glib::idle_add_local_once(move || {
+            adj.set_value(adj.upper() - adj.page_size());
+            let adj_late = adj.clone();
+            glib::timeout_add_local_once(Duration::from_millis(40), move || {
+                adj_late.set_value(adj_late.upper() - adj_late.page_size());
+            });
+        });
     }
 }
 

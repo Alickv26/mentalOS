@@ -1,10 +1,9 @@
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Box, Button, Label, Orientation};
-use log::info;
-use sysinfo::System;
 use std::cell::RefCell;
 use std::rc::Rc;
+use sysinfo::System;
 
 /// Top bar displaying the app name, AI status, system stats, and emergency stop.
 pub struct AppBar {
@@ -12,6 +11,7 @@ pub struct AppBar {
     status_label: Label,
     _cpu_label: Label,
     _mem_label: Label,
+    stop_btn: Button,
 }
 
 impl AppBar {
@@ -43,9 +43,6 @@ impl AppBar {
         // ── Stop button ──
         let stop_btn = Button::with_label("🔴 STOP");
         stop_btn.add_css_class("stop-button");
-        stop_btn.connect_clicked(|_| {
-            info!("Emergency STOP pressed");
-        });
         container.append(&stop_btn);
 
         let bar = Self {
@@ -53,6 +50,7 @@ impl AppBar {
             status_label,
             _cpu_label: cpu_label.clone(),
             _mem_label: mem_label.clone(),
+            stop_btn: stop_btn.clone(),
         };
 
         // ── Periodic stats update ──
@@ -88,5 +86,9 @@ impl AppBar {
     /// Update the AI status indicator.
     pub fn set_status(&self, status: &str) {
         self.status_label.set_text(&format!("[AI: {status}]"));
+    }
+
+    pub fn connect_stop_clicked<F: Fn(&Button) + 'static>(&self, f: F) {
+        self.stop_btn.connect_clicked(f);
     }
 }

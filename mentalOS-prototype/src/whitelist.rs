@@ -100,7 +100,10 @@ impl WhitelistManager {
     pub fn add_temporary(&mut self, command: impl Into<String>, ttl: Duration) {
         let command = command.into();
         let expires_at = Utc::now() + ttl;
-        self.data.temporary.push(TemporaryApproval { command, expires_at });
+        self.data.temporary.push(TemporaryApproval {
+            command,
+            expires_at,
+        });
     }
 
     pub fn default_path(config_dir: &Path) -> PathBuf {
@@ -110,9 +113,7 @@ impl WhitelistManager {
     pub fn is_allowed(&self, command: &str) -> Result<bool> {
         let command = command.trim();
         if command.is_empty() {
-            return Err(MentalOSError::InvalidCommand(
-                "Empty command".to_string(),
-            ));
+            return Err(MentalOSError::InvalidCommand("Empty command".to_string()));
         }
 
         if self.data.exact.iter().any(|c| c == command) {

@@ -34,7 +34,7 @@ pub struct AgentConfig {
     pub provider: String, // "openclaw", "ollama", "claude", etc.
     pub model: Option<String>,
     pub endpoint: Option<String>,
-    pub executable: Option<String>,     // For local agents like OpenCode
+    pub executable: Option<String>, // For local agents like OpenCode
     pub arguments: Option<Vec<String>>, // CLI args
 }
 
@@ -151,6 +151,21 @@ impl Config {
 
     pub fn workspace_dir(&self) -> Result<PathBuf> {
         expand_tilde(&self.paths.workspace_dir)
+    }
+
+    pub fn save(&self) -> Result<PathBuf> {
+        let path = config_path()?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let mut normalized = self.clone();
+        normalized.normalize_paths()?;
+        let serialized = toml::to_string_pretty(&normalized).map_err(|err| {
+            MentalOSError::ConfigInvalid(format!("Failed to serialize config: {err}"))
+        })?;
+        fs::write(&path, serialized)?;
+        Ok(path)
     }
 
     fn normalize_paths(&mut self) -> Result<()> {

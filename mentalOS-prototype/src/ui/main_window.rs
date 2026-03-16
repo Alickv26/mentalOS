@@ -5,11 +5,14 @@ use log::{error, info};
 use std::rc::Rc;
 use tokio::sync::mpsc::Sender;
 
+use crate::ui::app_bar::AppBar;
 use crate::ui::approval::{ApprovalDecision, ApprovalDialog};
 use crate::ui::chat_view::{ChatView, MessageRole};
-use crate::ui::launcher::AppLauncher;
+use crate::ui::launcher::{AppLauncher, launch_terminal};
+use crate::ui::memory_browser::MemoryBrowser;
 use crate::ui::messages::{BackendRequest, BackendResponse};
 use crate::ui::omni_pill::{AiState, OmniPill};
+use crate::ui::project_dialog::{ProjectDecision, ProjectDialog};
 
 /// The main mentalOS overlay window.
 pub struct MainWindow {
@@ -42,6 +45,10 @@ impl MainWindow {
         root_container.set_margin_start(24);
         root_container.set_margin_end(24);
 
+        // ── App Bar ──
+        let app_bar = AppBar::new();
+        root_container.append(&app_bar.container);
+
         // ── Chat View ──
         let chat_view = ChatView::new();
         chat_view.container.set_visible(false);
@@ -59,6 +66,7 @@ impl MainWindow {
         let pill = Rc::new(pill);
         let chat_view = Rc::new(chat_view);
         let root_container = Rc::new(root_container);
+        let app_bar = Rc::new(app_bar);
 
         // ── Wire Buttons ──
         let win_for_apps = window.clone();
@@ -66,10 +74,37 @@ impl MainWindow {
             AppLauncher::show(&win_for_apps);
         });
 
-        let _pill_term_ref = pill.clone();
-        pill.term_btn.connect_clicked(move |_| {
-            // Future: Toggle Terminal View
-            info!("Terminal button clicked");
+        let chat_for_term = chat_view.clone();
+        let win_for_term = window.clone();
+        pill.term_btn
+            .connect_clicked(move |_| match launch_terminal() {
+                Ok(_) => info!("Terminal launched"),
+                Err(err) => {
+                    chat_for_term.container.set_visible(true);
+                    win_for_term.set_default_height(500);
+                    chat_for_term.append_message(MessageRole::System, &format!("Error: {}", err));
+                    log::warn!("Terminal launch failed: {}", err);
+                }
+            });
+
+        let tx_for_stop_from_pill = backend_tx.clone();
+        let app_bar_ref = app_bar.clone();
+        let pill_ref_for_stop = pill.clone();
+        let root_ref_for_stop = root_container.clone();
+        pill.connect_stop_clicked(move |_| {
+            let _ = tx_for_stop_from_pill.blocking_send(BackendRequest::EmergencyStop);
+            app_bar_ref.set_status("Stopped");
+            set_visual_state(&root_ref_for_stop, &pill_ref_for_stop, AiState::Sleep);
+        });
+
+        let tx_for_stop_from_bar = backend_tx.clone();
+        let app_bar_ref = app_bar.clone();
+        let pill_ref_for_stop = pill.clone();
+        let root_ref_for_stop = root_container.clone();
+        app_bar.connect_stop_clicked(move |_| {
+            let _ = tx_for_stop_from_bar.blocking_send(BackendRequest::EmergencyStop);
+            app_bar_ref.set_status("Stopped");
+            set_visual_state(&root_ref_for_stop, &pill_ref_for_stop, AiState::Sleep);
         });
 
         // ── Create UI Channel Here (Avoids naming Receiver type) ──
@@ -81,12 +116,14 @@ impl MainWindow {
         let root_ref = root_container.clone();
         let win_ref = window.clone();
         let backend_tx_clone = backend_tx.clone();
+        let app_bar_ref = app_bar.clone();
 
         ui_rx.attach(None, move |msg| {
             match msg {
                 BackendResponse::Chat(text) => {
                     chat_ref.append_message(MessageRole::Ai, &text);
                     set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+                    app_bar_ref.set_status("Idle");
                 }
                 BackendResponse::CommandResult(output) => {
                     let text = format!(
@@ -95,9 +132,11 @@ impl MainWindow {
                     );
                     chat_ref.append_message(MessageRole::System, &text);
                     set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+                    app_bar_ref.set_status("Idle");
                 }
                 BackendResponse::ApprovalRequired(cmd) => {
                     set_visual_state(&root_ref, &pill_ref, AiState::Learn);
+                    app_bar_ref.set_status("Approval");
                     let tx = backend_tx_clone.clone();
                     let cmd_clone = cmd.clone();
                     ApprovalDialog::show(&win_ref, &cmd, move |decision| match decision {
@@ -113,12 +152,55 @@ impl MainWindow {
                 BackendResponse::Error(err) => {
                     chat_ref.append_message(MessageRole::System, &format!("Error: {}", err));
                     set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+                    app_bar_ref.set_status("Error");
                 }
                 BackendResponse::AgentList { agents, current } => {
                     update_agent_list(&pill_ref.agent_selector, &agents, &current);
                 }
                 BackendResponse::AgentSwitched(name) => {
                     info!("Switched active agent to: {}", name);
+                }
+                BackendResponse::ProjectConfirmationRequired {
+                    name,
+                    language,
+                    framework,
+                } => {
+                    let tx = backend_tx_clone.clone();
+                    let name_clone = name.clone();
+                    let lang_clone = language.clone();
+                    let fw_clone = framework.clone();
+                    ProjectDialog::show(
+                        &win_ref,
+                        &name,
+                        language.as_deref(),
+                        framework.as_deref(),
+                        move |decision| match decision {
+                            ProjectDecision::Create => {
+                                let _ = tx.blocking_send(BackendRequest::CreateProject {
+                                    name: name_clone.clone(),
+                                    language: lang_clone.clone(),
+                                    framework: fw_clone.clone(),
+                                });
+                            }
+                            ProjectDecision::Cancel => {
+                                info!("Project creation cancelled: {}", name_clone);
+                            }
+                        },
+                    );
+                }
+                BackendResponse::ProjectCreated {
+                    success,
+                    path: _,
+                    message,
+                } => {
+                    let text = if success {
+                        format!("Project created: {}", message)
+                    } else {
+                        format!("Project creation failed: {}", message)
+                    };
+                    chat_ref.append_message(MessageRole::System, &text);
+                    set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+                    app_bar_ref.set_status("Idle");
                 }
             }
             glib::ControlFlow::Continue
@@ -130,6 +212,7 @@ impl MainWindow {
         let root_ref = root_container.clone();
         let win_ref = window.clone();
         let pill_ref = pill.clone();
+        let app_bar_for_input = app_bar.clone();
         let backend_tx_for_input = backend_tx.clone();
 
         pill_input.connect_activate(move |entry| {
@@ -142,6 +225,7 @@ impl MainWindow {
             chat_ref.container.set_visible(true);
             win_ref.set_default_height(500);
             set_visual_state(&root_ref, &pill_ref, AiState::Active);
+            app_bar_for_input.set_status("Active");
             chat_ref.append_message(MessageRole::User, &text);
 
             let req = BackendRequest::Input {
@@ -154,6 +238,7 @@ impl MainWindow {
                 error!("Failed to send to backend: {}", e);
                 chat_ref.append_message(MessageRole::System, "Error: Backend unreachable");
                 set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
+                app_bar_for_input.set_status("Error");
             }
         });
 
@@ -187,10 +272,30 @@ impl MainWindow {
         // ── Shortcuts ──
         let key_ctrl = gtk4::EventControllerKey::new();
         let win_for_keys = window.clone();
+        let input_for_keys = pill.input.clone();
+        let tx_for_keys = backend_tx.clone();
+        let app_bar_for_keys = app_bar.clone();
+        let pill_for_keys = pill.clone();
+        let root_for_keys = root_container.clone();
         key_ctrl.connect_key_pressed(move |_, key, _, modifiers| {
             let ctrl = modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
+            let shift = modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK);
             if ctrl && key == gtk4::gdk::Key::k {
                 AppLauncher::show(&win_for_keys);
+                return glib::Propagation::Stop;
+            }
+            if ctrl && shift && key == gtk4::gdk::Key::M {
+                MemoryBrowser::show(&win_for_keys, "default");
+                return glib::Propagation::Stop;
+            }
+            if ctrl && key == gtk4::gdk::Key::l {
+                input_for_keys.grab_focus();
+                return glib::Propagation::Stop;
+            }
+            if ctrl && shift && key == gtk4::gdk::Key::Q {
+                let _ = tx_for_keys.blocking_send(BackendRequest::EmergencyStop);
+                app_bar_for_keys.set_status("Stopped");
+                set_visual_state(&root_for_keys, &pill_for_keys, AiState::Sleep);
                 return glib::Propagation::Stop;
             }
             if key == gtk4::gdk::Key::Escape {

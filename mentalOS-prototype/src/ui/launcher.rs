@@ -1,11 +1,10 @@
 use gtk4::glib;
 use gtk4::prelude::*;
-use gtk4::{
-    Box, Button, Entry, Label, Orientation, PolicyType, ScrolledWindow, Window,
-};
+use gtk4::{Box, Button, Entry, Label, Orientation, PolicyType, ScrolledWindow, Window};
 use log::info;
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::ErrorKind;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -91,6 +90,46 @@ impl AppLauncher {
     }
 }
 
+pub fn launch_terminal() -> Result<(), String> {
+    if let Ok(env_terminal) = std::env::var("TERMINAL") {
+        if try_spawn_terminal_command(&env_terminal)? {
+            return Ok(());
+        }
+    }
+
+    let candidates: [(&str, &[&str]); 8] = [
+        ("foot", &[]),
+        ("alacritty", &[]),
+        ("kitty", &[]),
+        ("wezterm", &["start"]),
+        ("gnome-terminal", &[]),
+        ("konsole", &[]),
+        ("xfce4-terminal", &[]),
+        ("xterm", &[]),
+    ];
+
+    for (program, args) in candidates {
+        match std::process::Command::new(program)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(_) => {
+                info!("Launched terminal: {}", program);
+                return Ok(());
+            }
+            Err(err) if err.kind() == ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(format!("Failed launching terminal '{}' : {}", program, err));
+            }
+        }
+    }
+
+    Err("No terminal emulator found. Set $TERMINAL or install foot/alacritty/kitty.".to_string())
+}
+
 /// Populate (or re-populate) the list box with entries matching the query.
 fn populate_list(list_box: &Box, entries: &[DesktopEntry], query: &str) {
     // Clear existing children
@@ -168,10 +207,7 @@ fn launch_app(exec: &str) {
 fn load_desktop_entries() -> Vec<DesktopEntry> {
     let mut entries: BTreeMap<String, DesktopEntry> = BTreeMap::new();
 
-    let dirs = [
-        "/usr/share/applications",
-        "/usr/local/share/applications",
-    ];
+    let dirs = ["/usr/share/applications", "/usr/local/share/applications"];
 
     for dir in &dirs {
         let path = Path::new(dir);
@@ -242,5 +278,33 @@ fn parse_desktop_file(path: &Path) -> Option<DesktopEntry> {
         return None;
     }
 
-    Some(DesktopEntry { name, exec, comment })
+    Some(DesktopEntry {
+        name,
+        exec,
+        comment,
+    })
+}
+
+fn try_spawn_terminal_command(command: &str) -> Result<bool, String> {
+    let parts = shell_words::split(command)
+        .map_err(|err| format!("Invalid $TERMINAL value '{}': {}", command, err))?;
+    let (program, args) = match parts.split_first() {
+        Some((program, args)) => (program, args),
+        None => return Ok(false),
+    };
+
+    match std::process::Command::new(program)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(_) => {
+            info!("Launched terminal from $TERMINAL: {}", command);
+            Ok(true)
+        }
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(format!("Failed launching $TERMINAL '{}': {}", command, err)),
+    }
 }

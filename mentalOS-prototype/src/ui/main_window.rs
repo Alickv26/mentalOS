@@ -1,7 +1,8 @@
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, Box, Orientation};
-use log::{error, info};
+use log::{error, info, warn};
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use tokio::sync::mpsc::Sender;
 
@@ -11,8 +12,13 @@ use crate::ui::chat_view::{ChatView, MessageRole};
 use crate::ui::launcher::{AppLauncher, launch_terminal};
 use crate::ui::memory_browser::MemoryBrowser;
 use crate::ui::messages::{BackendRequest, BackendResponse};
+use crate::ui::notifications::NotificationCenter;
 use crate::ui::omni_pill::{AiState, OmniPill};
+use crate::ui::onboarding_tutorial::OnboardingTutorial;
 use crate::ui::project_dialog::{ProjectDecision, ProjectDialog};
+use crate::ui::shortcuts::ShortcutBindings;
+use crate::ui::shortcuts_help::ShortcutsHelp;
+use crate::ui::shortcuts_settings::ShortcutsSettings;
 
 /// The main mentalOS overlay window.
 pub struct MainWindow {
@@ -38,6 +44,7 @@ impl MainWindow {
         let root_container = Box::new(Orientation::Vertical, 0);
         root_container.add_css_class("omni-container");
         root_container.add_css_class("state-sleep");
+        root_container.add_css_class("font-medium");
 
         // Add margins to prevent shadow clipping
         root_container.set_margin_top(24);
@@ -48,6 +55,10 @@ impl MainWindow {
         // ── App Bar ──
         let app_bar = AppBar::new();
         root_container.append(&app_bar.container);
+
+        // ── Notifications ──
+        let notifications = NotificationCenter::new();
+        root_container.append(&notifications.container);
 
         // ── Chat View ──
         let chat_view = ChatView::new();
@@ -67,6 +78,13 @@ impl MainWindow {
         let chat_view = Rc::new(chat_view);
         let root_container = Rc::new(root_container);
         let app_bar = Rc::new(app_bar);
+        let notifications = Rc::new(notifications);
+        let shortcut_bindings = Rc::new(RefCell::new(
+            ShortcutBindings::load_or_default().unwrap_or_else(|err| {
+                warn!("Failed to load shortcuts, using defaults: {}", err);
+                ShortcutBindings::default()
+            }),
+        ));
 
         // ── Wire Buttons ──
         let win_for_apps = window.clone();
@@ -94,6 +112,7 @@ impl MainWindow {
         pill.connect_stop_clicked(move |_| {
             let _ = tx_for_stop_from_pill.blocking_send(BackendRequest::EmergencyStop);
             app_bar_ref.set_status("Stopped");
+            app_bar_ref.set_busy(false);
             set_visual_state(&root_ref_for_stop, &pill_ref_for_stop, AiState::Sleep);
         });
 
@@ -104,6 +123,7 @@ impl MainWindow {
         app_bar.connect_stop_clicked(move |_| {
             let _ = tx_for_stop_from_bar.blocking_send(BackendRequest::EmergencyStop);
             app_bar_ref.set_status("Stopped");
+            app_bar_ref.set_busy(false);
             set_visual_state(&root_ref_for_stop, &pill_ref_for_stop, AiState::Sleep);
         });
 
@@ -117,13 +137,22 @@ impl MainWindow {
         let win_ref = window.clone();
         let backend_tx_clone = backend_tx.clone();
         let app_bar_ref = app_bar.clone();
+        let notifications_ref = notifications.clone();
+        let agent_selector_syncing = Rc::new(Cell::new(false));
+        let agent_selector_syncing_for_rx = agent_selector_syncing.clone();
 
         ui_rx.attach(None, move |msg| {
             match msg {
+                BackendResponse::Status(text) => {
+                    notifications_ref.show(&text);
+                    app_bar_ref.set_status("Active");
+                    app_bar_ref.set_busy(true);
+                }
                 BackendResponse::Chat(text) => {
                     chat_ref.append_message(MessageRole::Ai, &text);
                     set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
                     app_bar_ref.set_status("Idle");
+                    app_bar_ref.set_busy(false);
                 }
                 BackendResponse::CommandResult(output) => {
                     let text = format!(
@@ -133,10 +162,12 @@ impl MainWindow {
                     chat_ref.append_message(MessageRole::System, &text);
                     set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
                     app_bar_ref.set_status("Idle");
+                    app_bar_ref.set_busy(false);
                 }
                 BackendResponse::ApprovalRequired(cmd) => {
                     set_visual_state(&root_ref, &pill_ref, AiState::Learn);
                     app_bar_ref.set_status("Approval");
+                    app_bar_ref.set_busy(false);
                     let tx = backend_tx_clone.clone();
                     let cmd_clone = cmd.clone();
                     ApprovalDialog::show(&win_ref, &cmd, move |decision| match decision {
@@ -153,9 +184,15 @@ impl MainWindow {
                     chat_ref.append_message(MessageRole::System, &format!("Error: {}", err));
                     set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
                     app_bar_ref.set_status("Error");
+                    app_bar_ref.set_busy(false);
                 }
                 BackendResponse::AgentList { agents, current } => {
-                    update_agent_list(&pill_ref.agent_selector, &agents, &current);
+                    update_agent_list(
+                        &pill_ref.agent_selector,
+                        &agents,
+                        &current,
+                        &agent_selector_syncing_for_rx,
+                    );
                 }
                 BackendResponse::AgentSwitched(name) => {
                     info!("Switched active agent to: {}", name);
@@ -201,6 +238,7 @@ impl MainWindow {
                     chat_ref.append_message(MessageRole::System, &text);
                     set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
                     app_bar_ref.set_status("Idle");
+                    app_bar_ref.set_busy(false);
                 }
             }
             glib::ControlFlow::Continue
@@ -226,6 +264,7 @@ impl MainWindow {
             win_ref.set_default_height(500);
             set_visual_state(&root_ref, &pill_ref, AiState::Active);
             app_bar_for_input.set_status("Active");
+            app_bar_for_input.set_busy(true);
             chat_ref.append_message(MessageRole::User, &text);
 
             let req = BackendRequest::Input {
@@ -239,20 +278,19 @@ impl MainWindow {
                 chat_ref.append_message(MessageRole::System, "Error: Backend unreachable");
                 set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
                 app_bar_for_input.set_status("Error");
+                app_bar_for_input.set_busy(false);
             }
         });
 
         // ── Agent Selector Logic ──
         let pill_selector = pill.agent_selector.clone();
         let backend_tx_for_select = backend_tx.clone();
-        // Flag to prevent loop when updating from backend
-        // Rc<RefCell<bool>>? GTK signals handle this by checking value but we should be careful.
-        // Actually, for DropDown, we can just block signal handler or use separate method.
-        // Simple approach: When user changes, send request. When backend updates list, set selected.
-        // If set selected triggers signal, we check if it matches current expectation?
-        // Or just allow it (redundant switch is cheap).
+        let agent_selector_syncing_for_select = agent_selector_syncing.clone();
 
         pill_selector.connect_selected_notify(move |dropdown| {
+            if agent_selector_syncing_for_select.get() {
+                return;
+            }
             let selected_item = dropdown.selected_item();
             if let Some(item) = selected_item {
                 if let Some(string_obj) = item.downcast_ref::<gtk4::StringObject>() {
@@ -277,24 +315,89 @@ impl MainWindow {
         let app_bar_for_keys = app_bar.clone();
         let pill_for_keys = pill.clone();
         let root_for_keys = root_container.clone();
+        let notifications_for_keys = notifications.clone();
+        let high_contrast_enabled = Rc::new(Cell::new(false));
+        let high_contrast_for_keys = high_contrast_enabled.clone();
+        let font_scale_step = Rc::new(Cell::new(1_i32));
+        let font_scale_for_keys = font_scale_step.clone();
+        let shortcuts_for_keys = shortcut_bindings.clone();
         key_ctrl.connect_key_pressed(move |_, key, _, modifiers| {
-            let ctrl = modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
-            let shift = modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK);
-            if ctrl && key == gtk4::gdk::Key::k {
+            let bindings_snapshot = shortcuts_for_keys.borrow().clone();
+
+            if bindings_snapshot.matches("manage_shortcuts", key, modifiers) {
+                let bindings_store = shortcuts_for_keys.clone();
+                let notifications_for_save = notifications_for_keys.clone();
+                let current = bindings_snapshot.clone();
+                ShortcutsSettings::show(&win_for_keys, current, move |updated| {
+                    *bindings_store.borrow_mut() = updated;
+                    notifications_for_save.show("Shortcuts updated");
+                });
+                return glib::Propagation::Stop;
+            }
+
+            if bindings_snapshot.matches("show_onboarding", key, modifiers) {
+                OnboardingTutorial::show(&win_for_keys);
+                return glib::Propagation::Stop;
+            }
+
+            if bindings_snapshot.matches("toggle_high_contrast", key, modifiers) {
+                let enabled = !high_contrast_for_keys.get();
+                high_contrast_for_keys.set(enabled);
+                set_high_contrast(&root_for_keys, enabled);
+                if enabled {
+                    notifications_for_keys.show("High contrast mode: ON");
+                } else {
+                    notifications_for_keys.show("High contrast mode: OFF");
+                }
+                return glib::Propagation::Stop;
+            }
+
+            if bindings_snapshot.matches("font_increase", key, modifiers) {
+                let step = (font_scale_for_keys.get() + 1).clamp(0, 2);
+                font_scale_for_keys.set(step);
+                notifications_for_keys.show(apply_font_scale(&root_for_keys, step));
+                return glib::Propagation::Stop;
+            }
+
+            if bindings_snapshot.matches("font_decrease", key, modifiers) {
+                let step = (font_scale_for_keys.get() - 1).clamp(0, 2);
+                font_scale_for_keys.set(step);
+                notifications_for_keys.show(apply_font_scale(&root_for_keys, step));
+                return glib::Propagation::Stop;
+            }
+
+            if bindings_snapshot.matches("font_reset", key, modifiers) {
+                font_scale_for_keys.set(1);
+                notifications_for_keys.show(apply_font_scale(&root_for_keys, 1));
+                return glib::Propagation::Stop;
+            }
+
+            if bindings_snapshot.matches("open_launcher", key, modifiers) {
                 AppLauncher::show(&win_for_keys);
                 return glib::Propagation::Stop;
             }
-            if ctrl && shift && key == gtk4::gdk::Key::M {
+
+            if bindings_snapshot.matches("open_memory_browser", key, modifiers) {
                 MemoryBrowser::show(&win_for_keys, "default");
                 return glib::Propagation::Stop;
             }
-            if ctrl && key == gtk4::gdk::Key::l {
+
+            if bindings_snapshot.matches("show_help", key, modifiers)
+                || is_help_fallback_shortcut(key, modifiers)
+            {
+                ShortcutsHelp::show(&win_for_keys, &bindings_snapshot);
+                return glib::Propagation::Stop;
+            }
+
+            if bindings_snapshot.matches("focus_input", key, modifiers) {
                 input_for_keys.grab_focus();
                 return glib::Propagation::Stop;
             }
-            if ctrl && shift && key == gtk4::gdk::Key::Q {
+
+            if bindings_snapshot.matches("emergency_stop", key, modifiers) {
                 let _ = tx_for_keys.blocking_send(BackendRequest::EmergencyStop);
                 app_bar_for_keys.set_status("Stopped");
+                app_bar_for_keys.set_busy(false);
                 set_visual_state(&root_for_keys, &pill_for_keys, AiState::Sleep);
                 return glib::Propagation::Stop;
             }
@@ -313,7 +416,13 @@ impl MainWindow {
 }
 
 // Helper to update dropdown model safely
-fn update_agent_list(dropdown: &gtk4::DropDown, agents: &[String], current: &str) {
+fn update_agent_list(
+    dropdown: &gtk4::DropDown,
+    agents: &[String],
+    current: &str,
+    syncing: &Rc<Cell<bool>>,
+) {
+    syncing.set(true);
     let list = gtk4::StringList::new(&agents.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
     dropdown.set_model(Some(&list));
 
@@ -321,6 +430,7 @@ fn update_agent_list(dropdown: &gtk4::DropDown, agents: &[String], current: &str
     if let Some(idx) = agents.iter().position(|r| r.eq_ignore_ascii_case(current)) {
         dropdown.set_selected(idx as u32);
     }
+    syncing.set(false);
 }
 
 fn set_visual_state(container: &Box, pill_ui: &OmniPill, state: AiState) {
@@ -330,4 +440,45 @@ fn set_visual_state(container: &Box, pill_ui: &OmniPill, state: AiState) {
     container.remove_css_class("state-learn");
     container.add_css_class(state.css_class());
     pill_ui.set_state(state);
+}
+
+fn set_high_contrast(container: &Box, enabled: bool) {
+    if enabled {
+        container.add_css_class("high-contrast");
+    } else {
+        container.remove_css_class("high-contrast");
+    }
+}
+
+fn apply_font_scale(container: &Box, step: i32) -> &'static str {
+    container.remove_css_class("font-small");
+    container.remove_css_class("font-medium");
+    container.remove_css_class("font-large");
+    match step {
+        0 => {
+            container.add_css_class("font-small");
+            "Font size: small"
+        }
+        2 => {
+            container.add_css_class("font-large");
+            "Font size: large"
+        }
+        _ => {
+            container.add_css_class("font-medium");
+            "Font size: normal"
+        }
+    }
+}
+
+fn is_help_fallback_shortcut(key: gtk4::gdk::Key, modifiers: gtk4::gdk::ModifierType) -> bool {
+    if !modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK) {
+        return key == gtk4::gdk::Key::F1;
+    }
+    key == gtk4::gdk::Key::slash
+        || key == gtk4::gdk::Key::question
+        || key == gtk4::gdk::Key::KP_Divide
+        || key
+            .to_unicode()
+            .map(|c| c == '/' || c == '?')
+            .unwrap_or(false)
 }

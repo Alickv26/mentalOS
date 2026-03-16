@@ -1,15 +1,27 @@
 pub mod app_bar;
 pub mod approval;
 pub mod chat_view;
+pub mod config_wizard;
 pub mod home_screen;
 pub mod launcher;
 pub mod main_window;
 pub mod memory_browser;
 pub mod messages;
+pub mod notifications;
 pub mod omni_pill;
+pub mod onboarding_tutorial;
 pub mod project_dialog;
+pub mod shortcuts;
+pub mod shortcuts_help;
+pub mod shortcuts_settings;
 
 pub use approval::{ApprovalDecision, ApprovalDialog};
+pub use config_wizard::ConfigWizard;
 pub use home_screen::HomeScreen;
 pub use memory_browser::MemoryBrowser;
+pub use notifications::NotificationCenter;
+pub use onboarding_tutorial::OnboardingTutorial;
 pub use project_dialog::{ProjectDecision, ProjectDialog};
+pub use shortcuts::{SHORTCUT_DEFINITIONS, ShortcutBindings};
+pub use shortcuts_help::ShortcutsHelp;
+pub use shortcuts_settings::ShortcutsSettings;

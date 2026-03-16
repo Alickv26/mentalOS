@@ -8,23 +8,29 @@ use mentalOS::openclaw_launcher::OpenClawLauncher;
 use mentalOS::project_handler::ProjectHandler;
 use mentalOS::router::{CommandRouter, FirejailExecutor};
 use mentalOS::task_tracker::TaskTracker;
+use mentalOS::ui::config_wizard::ConfigWizard;
 use mentalOS::ui::main_window::MainWindow;
 use mentalOS::ui::messages::{BackendRequest, BackendResponse};
+use mentalOS::ui::onboarding_tutorial::OnboardingTutorial;
 use mentalOS::whitelist::WhitelistManager;
 use mentalOS::workspace::WorkspaceManager;
 use std::cell::RefCell;
+use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc as std_mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 
 const APP_ID: &str = "com.mentalos.prototype";
+const DEFAULT_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
+static LOG_FILE: OnceLock<Mutex<fs::File>> = OnceLock::new();
+static LOG_FILE_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 fn main() {
-    env_logger::init();
+    init_logging();
 
     let (backend_tx, mut backend_rx) = mpsc::channel::<BackendRequest>(32);
 
@@ -99,6 +105,8 @@ fn main() {
                     } => {
                         log::info!("Processing input: {}", text);
                         let _ = openclaw_launcher.ensure_running();
+                        let _ =
+                            ui_tx.send(BackendResponse::Status("AI is thinking...".to_string()));
 
                         if let Some(confirmation) = router.detect_project_intent(&text) {
                             log::info!("Project intent detected: {:?}", confirmation);
@@ -128,6 +136,9 @@ fn main() {
                     }
                     BackendRequest::ExecuteCommand(cmd) => {
                         log::info!("Executing approved command: {}", cmd);
+                        let _ = ui_tx.send(BackendResponse::Status(
+                            "Executing approved command...".to_string(),
+                        ));
                         match router.execute_approved_command(&cmd) {
                             Ok(output) => {
                                 let _ = ui_tx.send(BackendResponse::CommandResult(output));
@@ -144,6 +155,10 @@ fn main() {
                     }
                     BackendRequest::SwitchAgent(name) => {
                         log::info!("Switching agent to: {}", name);
+                        let _ = ui_tx.send(BackendResponse::Status(format!(
+                            "Switching agent to {}...",
+                            name
+                        )));
                         match router.switch_agent(&name) {
                             Ok(msg) => {
                                 let _ = ui_tx.send(BackendResponse::AgentSwitched(name));
@@ -165,6 +180,10 @@ fn main() {
                             language,
                             framework
                         );
+                        let _ = ui_tx.send(BackendResponse::Status(format!(
+                            "Creating project '{}'...",
+                            name
+                        )));
                         match router.create_project(&name, language, framework) {
                             Ok((success, message, path)) => {
                                 let _ = ui_tx.send(BackendResponse::ProjectCreated {
@@ -191,6 +210,10 @@ fn main() {
                             command_type,
                             workspace
                         );
+                        let _ = ui_tx.send(BackendResponse::Status(format!(
+                            "Running '{}' in project...",
+                            command_type
+                        )));
                         match router.run_project_command(&workspace, "general", &command_type) {
                             Ok(response) => {
                                 let _ = ui_tx.send(BackendResponse::Chat(response.message));
@@ -236,13 +259,171 @@ fn main() {
     app.connect_activate(move |app| {
         let (win, ui_tx) = MainWindow::new(app, backend_tx.clone());
         win.window.present();
+        let win_for_onboarding = win.window.clone();
 
-        if let Some(tx) = handshake_tx.borrow_mut().take() {
+        let config_missing = config_path().map(|p| !p.exists()).unwrap_or(true);
+        if config_missing {
+            let handshake_for_wizard = handshake_tx.clone();
+            let ui_tx_for_wizard = ui_tx.clone();
+            let win_for_onboarding_from_wizard = win_for_onboarding.clone();
+            ConfigWizard::show(&win.window, move || {
+                if let Some(tx) = handshake_for_wizard.borrow_mut().take() {
+                    let _ = tx.send(ui_tx_for_wizard.clone());
+                }
+                show_onboarding_if_needed(&win_for_onboarding_from_wizard);
+            });
+        } else if let Some(tx) = handshake_tx.borrow_mut().take() {
             let _ = tx.send(ui_tx);
+            show_onboarding_if_needed(&win_for_onboarding);
         }
     });
 
     app.run();
+}
+
+fn show_onboarding_if_needed(parent: &impl IsA<gtk4::Window>) {
+    if OnboardingTutorial::should_show() {
+        OnboardingTutorial::show(parent);
+    }
+}
+
+fn init_logging() {
+    use env_logger::Env;
+    use std::io::Write;
+
+    let debug_mode = env_flag("MENTALOS_DEBUG");
+    let default_filter = if debug_mode { "debug" } else { "info" };
+    let file_logging = setup_file_logging();
+
+    let json_mode = std::env::var("MENTALOS_LOG_FORMAT")
+        .map(|v| v.eq_ignore_ascii_case("json"))
+        .unwrap_or(false);
+
+    if json_mode {
+        let mut builder =
+            env_logger::Builder::from_env(Env::default().default_filter_or(default_filter));
+        builder.format(|buf, record| {
+            let timestamp = chrono::Utc::now().to_rfc3339();
+            let line = serde_json::json!({
+                "timestamp": timestamp,
+                "level": record.level().to_string(),
+                "target": record.target(),
+                "message": record.args().to_string(),
+            });
+            let rendered = line.to_string();
+            write_log_file_line(&rendered);
+            writeln!(buf, "{}", rendered)
+        });
+        builder.init();
+    } else {
+        let mut builder =
+            env_logger::Builder::from_env(Env::default().default_filter_or(default_filter));
+        builder.format(|buf, record| {
+            let timestamp = chrono::Utc::now().to_rfc3339();
+            let rendered = format!(
+                "[{} {} {}] {}",
+                timestamp,
+                record.level(),
+                record.target(),
+                record.args()
+            );
+            write_log_file_line(&rendered);
+            writeln!(buf, "{}", rendered)
+        });
+        builder.init();
+    }
+
+    match file_logging {
+        Ok(Some(path)) => log::info!("File logging enabled: {}", path.display()),
+        Ok(None) => log::info!("File logging disabled via MENTALOS_LOG_TO_FILE=0"),
+        Err(err) => log::warn!("File logging unavailable: {}", err),
+    }
+}
+
+fn setup_file_logging() -> std::result::Result<Option<PathBuf>, String> {
+    use std::fs::OpenOptions;
+
+    if !env_flag_default_true("MENTALOS_LOG_TO_FILE") {
+        return Ok(None);
+    }
+
+    let path = log_file_path();
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("Invalid log file path: {}", path.display()))?;
+    fs::create_dir_all(parent).map_err(|e| format!("Failed creating log dir: {e}"))?;
+
+    let max_bytes = std::env::var("MENTALOS_LOG_MAX_BYTES")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_LOG_MAX_BYTES);
+    rotate_log_file_if_needed(&path, max_bytes).map_err(|e| format!("Log rotation failed: {e}"))?;
+
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("Failed opening log file {}: {e}", path.display()))?;
+
+    let _ = LOG_FILE.set(Mutex::new(file));
+    let _ = LOG_FILE_PATH.set(path.clone());
+    Ok(Some(path))
+}
+
+fn rotate_log_file_if_needed(path: &std::path::Path, max_bytes: u64) -> std::io::Result<()> {
+    let metadata = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err),
+    };
+    if metadata.len() < max_bytes {
+        return Ok(());
+    }
+
+    let backup = PathBuf::from(format!("{}.1", path.display()));
+    if backup.exists() {
+        fs::remove_file(&backup)?;
+    }
+    fs::rename(path, backup)?;
+    Ok(())
+}
+
+fn write_log_file_line(line: &str) {
+    use std::io::Write;
+    if let Some(lock) = LOG_FILE.get() {
+        if let Ok(mut file) = lock.lock() {
+            let _ = writeln!(file, "{}", line);
+        }
+    }
+}
+
+fn log_file_path() -> PathBuf {
+    if let Ok(path) = std::env::var("MENTALOS_LOG_PATH") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+
+    if let Some(base) = directories::BaseDirs::new() {
+        if let Some(state_dir) = base.state_dir() {
+            return state_dir.join("mentalOS").join("logs").join("mentalOS.log");
+        }
+    }
+
+    PathBuf::from("/tmp/mentalOS.log")
+}
+
+fn env_flag(name: &str) -> bool {
+    std::env::var(name)
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
+        .unwrap_or(false)
+}
+
+fn env_flag_default_true(name: &str) -> bool {
+    std::env::var(name)
+        .map(|v| !(v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("no")))
+        .unwrap_or(true)
 }
 
 fn load_css() {

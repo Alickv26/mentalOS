@@ -1,0 +1,171 @@
+use crate::ui::shortcuts::{SHORTCUT_DEFINITIONS, ShortcutBindings, validate_shortcut};
+use gtk4::prelude::*;
+use gtk4::{Box, Button, Entry, Grid, Label, Orientation, Window};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+pub struct ShortcutsSettings;
+
+impl ShortcutsSettings {
+    pub fn show<F>(parent: &impl IsA<gtk4::Window>, current: ShortcutBindings, on_saved: F)
+    where
+        F: Fn(ShortcutBindings) + 'static,
+    {
+        let dialog = Window::builder()
+            .title("Manage Shortcuts")
+            .modal(true)
+            .transient_for(parent)
+            .default_width(620)
+            .default_height(440)
+            .resizable(false)
+            .build();
+        dialog.add_css_class("launcher-window");
+
+        let root = Box::new(Orientation::Vertical, 10);
+        root.set_margin_top(16);
+        root.set_margin_bottom(16);
+        root.set_margin_start(16);
+        root.set_margin_end(16);
+
+        let title = Label::new(Some("Keyboard shortcut settings"));
+        title.set_halign(gtk4::Align::Start);
+        title.add_css_class("app-bar-title");
+        root.append(&title);
+
+        let subtitle = Label::new(Some(
+            "Format: Ctrl+K, Ctrl+Shift+M, Ctrl+Comma, Ctrl+Slash. Add Shift/Alt as needed.",
+        ));
+        subtitle.set_halign(gtk4::Align::Start);
+        subtitle.set_wrap(true);
+        subtitle.add_css_class("app-bar-stats");
+        root.append(&subtitle);
+
+        let grid = Grid::new();
+        grid.set_column_spacing(12);
+        grid.set_row_spacing(8);
+        grid.set_hexpand(true);
+
+        let header_action = Label::new(Some("Action"));
+        header_action.set_halign(gtk4::Align::Start);
+        header_action.add_css_class("app-bar-title");
+        grid.attach(&header_action, 0, 0, 1, 1);
+
+        let header_combo = Label::new(Some("Shortcut"));
+        header_combo.set_halign(gtk4::Align::Start);
+        header_combo.add_css_class("app-bar-title");
+        grid.attach(&header_combo, 1, 0, 1, 1);
+
+        let entry_map: Rc<RefCell<HashMap<String, Entry>>> = Rc::new(RefCell::new(HashMap::new()));
+        let current_state = Rc::new(RefCell::new(current));
+
+        for (idx, def) in SHORTCUT_DEFINITIONS.iter().enumerate() {
+            let row = idx as i32 + 1;
+            let action_text = format!("{} — {}", def.label, def.description);
+            let label = Label::new(Some(&action_text));
+            label.set_halign(gtk4::Align::Start);
+            label.add_css_class("message-content");
+            label.set_wrap(true);
+            grid.attach(&label, 0, row, 1, 1);
+
+            let combo = current_state.borrow().get(def.id);
+            let entry = Entry::builder().text(&combo).build();
+            entry.set_hexpand(true);
+            entry.set_tooltip_text(Some(def.default));
+            grid.attach(&entry, 1, row, 1, 1);
+            entry_map
+                .borrow_mut()
+                .insert(def.id.to_string(), entry.clone());
+        }
+
+        root.append(&grid);
+
+        let status_label = Label::new(None);
+        status_label.set_halign(gtk4::Align::Start);
+        status_label.add_css_class("welcome-hint");
+        status_label.set_wrap(true);
+        root.append(&status_label);
+
+        let actions = Box::new(Orientation::Horizontal, 8);
+        actions.set_halign(gtk4::Align::End);
+
+        let reset_btn = Button::with_label("Reset Defaults");
+        let cancel_btn = Button::with_label("Cancel");
+        let save_btn = Button::with_label("Save");
+        save_btn.add_css_class("create-button");
+        actions.append(&reset_btn);
+        actions.append(&cancel_btn);
+        actions.append(&save_btn);
+        root.append(&actions);
+
+        dialog.set_child(Some(&root));
+
+        let dialog_for_cancel = dialog.clone();
+        cancel_btn.connect_clicked(move |_| {
+            dialog_for_cancel.close();
+        });
+
+        let entry_map_for_reset = entry_map.clone();
+        let status_for_reset = status_label.clone();
+        reset_btn.connect_clicked(move |_| {
+            for def in SHORTCUT_DEFINITIONS {
+                if let Some(entry) = entry_map_for_reset.borrow().get(def.id) {
+                    entry.set_text(def.default);
+                }
+            }
+            status_for_reset.set_text("Defaults restored in form. Click Save to persist.");
+        });
+
+        let dialog_for_save = dialog.clone();
+        let status_for_save = status_label.clone();
+        let entry_map_for_save = entry_map.clone();
+        let state_for_save = current_state.clone();
+
+        save_btn.connect_clicked(move |_| {
+            let mut updated = state_for_save.borrow().clone();
+
+            for def in SHORTCUT_DEFINITIONS {
+                let entry = match entry_map_for_save.borrow().get(def.id) {
+                    Some(v) => v.clone(),
+                    None => continue,
+                };
+                let value = entry.text().to_string();
+                if let Err(err) = validate_shortcut(&value) {
+                    status_for_save.set_text(&format!("{} -> {}", def.label, err));
+                    return;
+                }
+                updated.set(def.id, &value);
+            }
+
+            match updated.save() {
+                Ok(path) => {
+                    *state_for_save.borrow_mut() = updated.clone();
+                    on_saved(updated);
+                    status_for_save.set_text(&format!("Saved shortcuts to {}", path.display()));
+                }
+                Err(err) => {
+                    status_for_save.set_text(&format!("Failed to save shortcuts: {}", err));
+                }
+            }
+        });
+
+        let dialog_for_enter = dialog_for_save.clone();
+        let save_btn_for_enter = save_btn.clone();
+        let key_ctrl_save = gtk4::EventControllerKey::new();
+        key_ctrl_save.connect_key_pressed(move |_, key, _, mods| {
+            if key == gtk4::gdk::Key::Return && mods.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+            {
+                save_btn_for_enter.emit_clicked();
+                return gtk4::glib::Propagation::Stop;
+            }
+            if key == gtk4::gdk::Key::Escape {
+                dialog_for_enter.close();
+                return gtk4::glib::Propagation::Stop;
+            }
+            gtk4::glib::Propagation::Proceed
+        });
+        dialog.add_controller(key_ctrl_save);
+
+        dialog.present();
+    }
+}

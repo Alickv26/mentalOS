@@ -39,6 +39,8 @@ pub enum BackendRequest {
 /// Responses sent from the Backend to the UI.
 #[derive(Debug, Clone)]
 pub enum BackendResponse {
+    /// Non-chat status update for transient UI notifications.
+    Status(String),
     /// A standard text response (e.g. from LLM).
     Chat(String),
     /// A command execution result.

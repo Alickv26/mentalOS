@@ -1,0 +1,80 @@
+name: Performance Benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      perf_iterations:
+        description: "Latency benchmark iterations"
+        required: false
+        default: "150"
+      perf_warmup:
+        description: "Latency benchmark warmup iterations"
+        required: false
+        default: "20"
+      stress_iterations:
+        description: "Stress benchmark iterations"
+        required: false
+        default: "1500"
+
+jobs:
+  run-benchmarks:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+      MENTALOS_PERF_ITERATIONS: ${{ github.event.inputs.perf_iterations }}
+      MENTALOS_PERF_WARMUP: ${{ github.event.inputs.perf_warmup }}
+      MENTALOS_STRESS_ITERATIONS: ${{ github.event.inputs.stress_iterations }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install GTK build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libgtk-4-dev \
+            libglib2.0-dev \
+            libpango1.0-dev \
+            libcairo2-dev \
+            libgraphene-1.0-dev \
+            libgdk-pixbuf-2.0-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Benchmarks
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          ./scripts/perf_bench.sh | tee artifacts/performance-bench.log
+          grep '^PERF ' artifacts/performance-bench.log | tee artifacts/performance-summary.txt || true
+
+      - name: Publish Step Summary
+        run: |
+          {
+            echo "## Performance Benchmarks"
+            echo ""
+            echo "- MENTALOS_PERF_ITERATIONS=${MENTALOS_PERF_ITERATIONS}"
+            echo "- MENTALOS_PERF_WARMUP=${MENTALOS_PERF_WARMUP}"
+            echo "- MENTALOS_STRESS_ITERATIONS=${MENTALOS_STRESS_ITERATIONS}"
+            echo ""
+            if [ -s artifacts/performance-summary.txt ]; then
+              while IFS= read -r line; do
+                echo "- \`${line}\`"
+              done < artifacts/performance-summary.txt
+            else
+              echo "- No PERF summary lines found. See artifact logs."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-benchmarks-${{ github.run_number }}
+          path: artifacts/
+          if-no-files-found: error

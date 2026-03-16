@@ -28,6 +28,15 @@ const DEFAULT_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
 static LOG_FILE: OnceLock<Mutex<fs::File>> = OnceLock::new();
 static LOG_FILE_PATH: OnceLock<PathBuf> = OnceLock::new();
 
+fn expand_home_path(path: &str) -> PathBuf {
+    if let Some(stripped) = path.strip_prefix("~/") {
+        if let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf()) {
+            return home.join(stripped);
+        }
+    }
+    PathBuf::from(path)
+}
+
 fn send_ui(ui_tx: &async_channel::Sender<BackendResponse>, msg: BackendResponse) {
     if let Err(err) = ui_tx.send_blocking(msg) {
         log::warn!("Failed to send backend response to UI: {}", err);
@@ -77,21 +86,16 @@ fn main() {
 
             let openclaw = OpenClawClient::from_config(&config);
             let mut openclaw_launcher = OpenClawLauncher::from_config(&config);
-            let _ = openclaw_launcher.ensure_running();
+            if let Err(err) = openclaw_launcher.ensure_running() {
+                log::warn!("OpenClaw launcher startup check failed: {}", err);
+            }
             let whitelist = Arc::new(Mutex::new(
                 WhitelistManager::load(whitelist_path.clone())
                     .unwrap_or_else(|_| WhitelistManager::new(whitelist_path)),
             ));
 
-            // Use config.paths.workspace_dir (type String) -> PathBuf
-            let workspace_dir = PathBuf::from(&config.paths.workspace_dir);
-            // Note: We should expand tilde if Config::load didn't?
-            // Config::load calls normalize_paths but Config::default doesn't?
-            // If default, it is "~/workspaces".
-            // MemoryManager might handle tilde? Usually not.
-            // For verified robustness, we'll just use it as is or expand if using Config method.
-            // But Main can't easily call private methods.
-            // Let's rely on logic working or basic path.
+            // Config::default may still contain "~", so normalize here too.
+            let workspace_dir = expand_home_path(&config.paths.workspace_dir);
 
             let memory = Arc::new(Mutex::new(MemoryManager::new(workspace_dir.clone())));
             let executor = FirejailExecutor::new();
@@ -114,7 +118,9 @@ fn main() {
                         category,
                     } => {
                         log::info!("Processing input: {}", text);
-                        let _ = openclaw_launcher.ensure_running();
+                        if let Err(err) = openclaw_launcher.ensure_running() {
+                            log::warn!("OpenClaw launcher check failed: {}", err);
+                        }
                         send_ui(
                             &ui_tx,
                             BackendResponse::Status("AI is thinking...".to_string()),
@@ -422,6 +428,27 @@ fn write_log_file_line(line: &str) {
     if let Some(lock) = LOG_FILE.get() {
         if let Ok(mut file) = lock.lock() {
             let _ = writeln!(file, "{}", line);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::expand_home_path;
+
+    #[test]
+    fn expand_home_path_preserves_absolute_path() {
+        let path = expand_home_path("/tmp/workspace");
+        assert_eq!(path, std::path::PathBuf::from("/tmp/workspace"));
+    }
+
+    #[test]
+    fn expand_home_path_handles_tilde_prefix() {
+        let path = expand_home_path("~/workspace");
+        if let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf()) {
+            assert_eq!(path, home.join("workspace"));
+        } else {
+            assert_eq!(path, std::path::PathBuf::from("~/workspace"));
         }
     }
 }

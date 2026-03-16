@@ -1,3 +1,4 @@
+use crate::error::{MentalOSError, Result};
 use crate::ui::shortcuts::{SHORTCUT_DEFINITIONS, ShortcutBindings, validate_shortcut};
 use gtk4::prelude::*;
 use gtk4::{Box, Button, Entry, Grid, Label, Orientation, Window};
@@ -122,20 +123,14 @@ impl ShortcutsSettings {
         let state_for_save = current_state.clone();
 
         save_btn.connect_clicked(move |_| {
-            let mut updated = state_for_save.borrow().clone();
-
-            for def in SHORTCUT_DEFINITIONS {
-                let entry = match entry_map_for_save.borrow().get(def.id) {
-                    Some(v) => v.clone(),
-                    None => continue,
-                };
-                let value = entry.text().to_string();
-                if let Err(err) = validate_shortcut(&value) {
-                    status_for_save.set_text(&format!("{} -> {}", def.label, err));
+            let form_values = collect_form_values(&entry_map_for_save.borrow());
+            let updated = match apply_shortcut_form_values(&state_for_save.borrow(), &form_values) {
+                Ok(v) => v,
+                Err(err) => {
+                    status_for_save.set_text(&format!("Invalid shortcut: {}", err));
                     return;
                 }
-                updated.set(def.id, &value);
-            }
+            };
 
             match updated.save() {
                 Ok(path) => {
@@ -167,5 +162,61 @@ impl ShortcutsSettings {
         dialog.add_controller(key_ctrl_save);
 
         dialog.present();
+    }
+}
+
+fn collect_form_values(entry_map: &HashMap<String, Entry>) -> HashMap<String, String> {
+    entry_map
+        .iter()
+        .map(|(id, entry)| (id.clone(), entry.text().to_string()))
+        .collect()
+}
+
+fn apply_shortcut_form_values(
+    current: &ShortcutBindings,
+    form_values: &HashMap<String, String>,
+) -> Result<ShortcutBindings> {
+    let mut updated = current.clone();
+    for def in SHORTCUT_DEFINITIONS {
+        let Some(value) = form_values.get(def.id) else {
+            continue;
+        };
+        if let Err(err) = validate_shortcut(value) {
+            return Err(MentalOSError::ConfigInvalid(format!(
+                "{} -> {}",
+                def.label, err
+            )));
+        }
+        updated.set(def.id, value);
+    }
+    Ok(updated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_shortcut_form_values_updates_and_preserves_existing() {
+        let current = ShortcutBindings::default();
+        let mut form_values = HashMap::new();
+        form_values.insert("show_help".to_string(), "Ctrl+Question".to_string());
+
+        let updated = apply_shortcut_form_values(&current, &form_values)
+            .expect("valid shortcut update should succeed");
+        assert_eq!(updated.get("show_help"), "Ctrl+Question");
+        assert_eq!(
+            updated.get("manage_shortcuts"),
+            current.get("manage_shortcuts")
+        );
+    }
+
+    #[test]
+    fn apply_shortcut_form_values_rejects_invalid_entry() {
+        let current = ShortcutBindings::default();
+        let mut form_values = HashMap::new();
+        form_values.insert("show_help".to_string(), "Ctrl".to_string());
+
+        assert!(apply_shortcut_form_values(&current, &form_values).is_err());
     }
 }

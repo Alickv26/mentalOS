@@ -1,5 +1,5 @@
 use crate::error::{MentalOSError, Result};
-use crate::memory::{MemoryManager, Role};
+use crate::memory::{MemoryManager, MessageAction, Role};
 use crate::openclaw::OpenClawClient;
 use crate::project_handler::ProjectHandler;
 use crate::task_tracker::TaskTracker;
@@ -284,7 +284,32 @@ impl<E: CommandExecutor> CommandRouter<E> {
             };
             let agent = self.openclaw.get_current_provider();
             match handler.scaffold_project(&request, agent) {
-                Ok(response) => Ok((response.success, response.message, response.path)),
+                Ok(response) => {
+                    if response.success {
+                        if let Ok(memory) = self.memory.lock() {
+                            let mut actions = Vec::new();
+                            if let Some(path) = response.path.clone() {
+                                actions.push(MessageAction {
+                                    action_type: "create_project".to_string(),
+                                    path: Some(path.clone()),
+                                    command: None,
+                                });
+                            }
+                            let _ = memory.append_message_with_actions(
+                                "default",
+                                "general",
+                                Role::Assistant,
+                                response.message.clone(),
+                                actions,
+                            );
+                            if let Some(path) = response.path.clone() {
+                                let _ = memory
+                                    .set_workspace_for_active_session("default", "general", &path);
+                            }
+                        }
+                    }
+                    Ok((response.success, response.message, response.path))
+                }
                 Err(e) => Ok((false, e.to_string(), None)),
             }
         } else {
@@ -456,6 +481,20 @@ impl<E: CommandExecutor> CommandRouter<E> {
             }
         };
 
+        let related_session_note = {
+            let memory = self
+                .memory
+                .lock()
+                .map_err(|_| MentalOSError::Other("Memory lock poisoned".into()))?;
+            match memory.find_related_session_for_project(workspace, &workspace_path)? {
+                Some(session) => {
+                    let label = session.title.unwrap_or(session.session_id);
+                    Some(format!("(related conversation: {label})"))
+                }
+                None => None,
+            }
+        };
+
         let project_command = match handler.resolve_project_command(&workspace_path, command_type) {
             Ok(command) => command,
             Err(err) => {
@@ -482,19 +521,29 @@ impl<E: CommandExecutor> CommandRouter<E> {
             WhitelistDecision::Allowed => {
                 let output = self.executor.execute(&execution_command)?;
                 outputs.push(output);
-                format!(
+                let mut msg = format!(
                     "Executed project {} command in {}.",
                     command_type,
                     workspace_path.display()
-                )
+                );
+                if let Some(note) = &related_session_note {
+                    msg.push(' ');
+                    msg.push_str(note);
+                }
+                msg
             }
             WhitelistDecision::NeedsApproval => {
                 approvals_required.push(execution_command);
-                format!(
+                let mut msg = format!(
                     "Project command requires approval:\n{}\n(workspace: {})",
                     project_command,
                     workspace_path.display()
-                )
+                );
+                if let Some(note) = &related_session_note {
+                    msg.push('\n');
+                    msg.push_str(note);
+                }
+                msg
             }
         };
 

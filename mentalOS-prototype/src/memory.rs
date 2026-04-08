@@ -110,6 +110,17 @@ impl MemoryManager {
         role: Role,
         content: impl Into<String>,
     ) -> Result<PathBuf> {
+        self.append_message_with_actions(workspace, category, role, content, Vec::new())
+    }
+
+    pub fn append_message_with_actions(
+        &self,
+        workspace: &str,
+        category: &str,
+        role: Role,
+        content: impl Into<String>,
+        actions: Vec<MessageAction>,
+    ) -> Result<PathBuf> {
         let content = content.into();
         let category = normalize_category(category);
         let dir = self.category_dir(workspace, &category);
@@ -133,7 +144,7 @@ impl MemoryManager {
             role,
             content,
             timestamp: Utc::now(),
-            actions: Vec::new(),
+            actions,
         });
         conversation.last_active = Utc::now();
 
@@ -362,6 +373,88 @@ impl MemoryManager {
         })
     }
 
+    pub fn set_workspace_for_active_session(
+        &self,
+        workspace: &str,
+        category: &str,
+        project_workspace: &str,
+    ) -> Result<bool> {
+        let category = normalize_category(category);
+        let Some(active) = self.active_session_id(workspace, &category)? else {
+            return Ok(false);
+        };
+        self.set_workspace_for_session(workspace, &category, &active, project_workspace)
+    }
+
+    pub fn set_workspace_for_session(
+        &self,
+        workspace: &str,
+        category: &str,
+        session_id: &str,
+        project_workspace: &str,
+    ) -> Result<bool> {
+        let dir = self.category_dir(workspace, &normalize_category(category));
+        if !dir.exists() {
+            return Ok(false);
+        }
+        let Some(file) = find_session_file(&dir, session_id)? else {
+            return Ok(false);
+        };
+        let Some(mut conversation) = load_conversation(&file)? else {
+            return Ok(false);
+        };
+        conversation.metadata.workspace = project_workspace.to_string();
+        let serialized = serde_json::to_string_pretty(&conversation)?;
+        fs::write(file, serialized)?;
+        Ok(true)
+    }
+
+    pub fn find_related_session_for_project(
+        &self,
+        workspace: &str,
+        project_workspace: &Path,
+    ) -> Result<Option<SessionSummary>> {
+        let project_key = normalize_project_path(project_workspace);
+        for session in self.list_sessions(workspace)? {
+            let loaded =
+                self.load_session(&session.workspace, &session.category, &session.session_id)?;
+            let Some(conversation) = loaded else {
+                continue;
+            };
+            if paths_match(
+                project_key.as_deref(),
+                Some(&conversation.metadata.workspace),
+            ) {
+                return Ok(Some(session));
+            }
+            let has_action_match = conversation.messages.iter().any(|m| {
+                m.actions.iter().any(|a| {
+                    if let Some(path) = &a.path {
+                        paths_match(project_key.as_deref(), Some(path))
+                    } else {
+                        false
+                    }
+                })
+            });
+            if has_action_match {
+                return Ok(Some(session));
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn load_related_conversation_for_project(
+        &self,
+        workspace: &str,
+        project_workspace: &Path,
+    ) -> Result<Option<Conversation>> {
+        let Some(session) = self.find_related_session_for_project(workspace, project_workspace)?
+        else {
+            return Ok(None);
+        };
+        self.load_session(&session.workspace, &session.category, &session.session_id)
+    }
+
     fn category_dir(&self, workspace: &str, category: &str) -> PathBuf {
         self.workspace_dir
             .join(workspace)
@@ -577,6 +670,37 @@ fn generate_session_id() -> String {
 
 fn is_false(v: &bool) -> bool {
     !*v
+}
+
+fn normalize_project_path(path: &Path) -> Option<String> {
+    let base = if path.exists() {
+        fs::canonicalize(path).ok()
+    } else {
+        None
+    }
+    .unwrap_or_else(|| path.to_path_buf());
+    let text = base.to_string_lossy().to_string();
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+fn paths_match(left: Option<&str>, right: Option<&str>) -> bool {
+    let (Some(left), Some(right)) = (left, right) else {
+        return false;
+    };
+    if left == right {
+        return true;
+    }
+
+    let left_norm = normalize_project_path(Path::new(left));
+    let right_norm = normalize_project_path(Path::new(right));
+    match (left_norm, right_norm) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
 }
 
 fn redact_sensitive_text(content: &str) -> (String, usize) {
@@ -855,5 +979,72 @@ mod tests {
             .unwrap();
         assert_eq!(payload.conversations.len(), 0);
         assert_eq!(payload.skipped_local_only, 1);
+    }
+
+    #[test]
+    fn append_message_with_actions_persists_action_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+        manager
+            .append_message_with_actions(
+                "demo",
+                "general",
+                Role::Assistant,
+                "Created project",
+                vec![MessageAction {
+                    action_type: "create_project".to_string(),
+                    path: Some("/tmp/workspaces/demo".to_string()),
+                    command: None,
+                }],
+            )
+            .unwrap();
+        let session = manager
+            .list_sessions("demo")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let loaded = manager
+            .load_session("demo", "general", &session.session_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.messages.len(), 1);
+        assert_eq!(loaded.messages[0].actions.len(), 1);
+        assert_eq!(
+            loaded.messages[0].actions[0].path.as_deref(),
+            Some("/tmp/workspaces/demo")
+        );
+    }
+
+    #[test]
+    fn finds_related_session_by_project_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+        let project = temp_dir.path().join("workspaces").join("demo-app");
+        fs::create_dir_all(&project).unwrap();
+
+        manager
+            .append_message_with_actions(
+                "demo",
+                "general",
+                Role::Assistant,
+                "Created project",
+                vec![MessageAction {
+                    action_type: "create_project".to_string(),
+                    path: Some(project.to_string_lossy().to_string()),
+                    command: None,
+                }],
+            )
+            .unwrap();
+
+        let related = manager
+            .find_related_session_for_project("demo", &project)
+            .unwrap();
+        assert!(related.is_some());
+
+        let loaded = manager
+            .load_related_conversation_for_project("demo", &project)
+            .unwrap();
+        assert!(loaded.is_some());
     }
 }

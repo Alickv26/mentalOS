@@ -100,10 +100,10 @@ impl AppLauncher {
 }
 
 pub fn launch_terminal() -> Result<(), String> {
-    if let Ok(env_terminal) = std::env::var("TERMINAL") {
-        if try_spawn_terminal_command(&env_terminal)? {
-            return Ok(());
-        }
+    if let Ok(env_terminal) = std::env::var("TERMINAL")
+        && try_spawn_terminal_command(&env_terminal)?
+    {
+        return Ok(());
     }
 
     let candidates: [(&str, &[&str]); 8] = [

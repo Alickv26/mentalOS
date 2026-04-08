@@ -191,6 +191,12 @@ impl ChatView {
     }
 }
 
+impl Default for ChatView {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn append_welcome_rows(message_list: &Box) {
     let welcome = Label::new(Some("Welcome to mentalOS"));
     welcome.add_css_class("welcome-label");

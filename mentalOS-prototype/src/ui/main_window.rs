@@ -288,25 +288,22 @@ impl MainWindow {
                             format!("Project creation failed: {}", message)
                         };
                         chat_ref.append_message(MessageRole::System, &text);
-                        if success {
-                            if let Some(project_path) = path {
-                                let manager = MemoryManager::new(default_workspace_root());
-                                match manager.find_related_session_for_project(
-                                    "default",
-                                    Path::new(&project_path),
-                                ) {
-                                    Ok(Some(session)) => {
-                                        let label =
-                                            session.title.as_deref().unwrap_or(&session.session_id);
-                                        app_bar_ref.set_current_session(label);
-                                        notifications_ref.show(&format!(
-                                            "Linked project to conversation: {label}"
-                                        ));
-                                    }
-                                    Ok(None) => {}
-                                    Err(err) => {
-                                        warn!("Failed to resolve related session: {}", err);
-                                    }
+                        if success && let Some(project_path) = path {
+                            let manager = MemoryManager::new(default_workspace_root());
+                            match manager.find_related_session_for_project(
+                                "default",
+                                Path::new(&project_path),
+                            ) {
+                                Ok(Some(session)) => {
+                                    let label =
+                                        session.title.as_deref().unwrap_or(&session.session_id);
+                                    app_bar_ref.set_current_session(label);
+                                    notifications_ref
+                                        .show(&format!("Linked project to conversation: {label}"));
+                                }
+                                Ok(None) => {}
+                                Err(err) => {
+                                    warn!("Failed to resolve related session: {}", err);
                                 }
                             }
                         }
@@ -366,15 +363,15 @@ impl MainWindow {
                 return;
             }
             let selected_item = dropdown.selected_item();
-            if let Some(item) = selected_item {
-                if let Some(string_obj) = item.downcast_ref::<gtk4::StringObject>() {
-                    let name = string_obj.string().to_string();
-                    if name == "Loading..." {
-                        return;
-                    }
-                    info!("Agent selected: {}", name);
-                    let _ = backend_tx_for_select.blocking_send(BackendRequest::SwitchAgent(name));
+            if let Some(item) = selected_item
+                && let Some(string_obj) = item.downcast_ref::<gtk4::StringObject>()
+            {
+                let name = string_obj.string().to_string();
+                if name == "Loading..." {
+                    return;
                 }
+                info!("Agent selected: {}", name);
+                let _ = backend_tx_for_select.blocking_send(BackendRequest::SwitchAgent(name));
             }
         });
 

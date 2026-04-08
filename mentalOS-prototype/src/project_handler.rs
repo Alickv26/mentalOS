@@ -271,35 +271,32 @@ impl ProjectHandler {
         ];
 
         for pattern in &setup_patterns {
-            if let Ok(re) = Regex::new(pattern) {
-                if let Some(cap) = re.captures(output) {
-                    if let Some(m) = cap.get(1) {
-                        commands.insert("setup".to_string(), m.as_str().trim().to_string());
-                        break;
-                    }
-                }
+            if let Ok(re) = Regex::new(pattern)
+                && let Some(cap) = re.captures(output)
+                && let Some(m) = cap.get(1)
+            {
+                commands.insert("setup".to_string(), m.as_str().trim().to_string());
+                break;
             }
         }
 
         for pattern in &run_patterns {
-            if let Ok(re) = Regex::new(pattern) {
-                if let Some(cap) = re.captures(output) {
-                    if let Some(m) = cap.get(1) {
-                        commands.insert("run".to_string(), m.as_str().trim().to_string());
-                        break;
-                    }
-                }
+            if let Ok(re) = Regex::new(pattern)
+                && let Some(cap) = re.captures(output)
+                && let Some(m) = cap.get(1)
+            {
+                commands.insert("run".to_string(), m.as_str().trim().to_string());
+                break;
             }
         }
 
         for pattern in &test_patterns {
-            if let Ok(re) = Regex::new(pattern) {
-                if let Some(cap) = re.captures(output) {
-                    if let Some(m) = cap.get(1) {
-                        commands.insert("test".to_string(), m.as_str().trim().to_string());
-                        break;
-                    }
-                }
+            if let Ok(re) = Regex::new(pattern)
+                && let Some(cap) = re.captures(output)
+                && let Some(m) = cap.get(1)
+            {
+                commands.insert("test".to_string(), m.as_str().trim().to_string());
+                break;
             }
         }
 
@@ -320,7 +317,7 @@ impl ProjectHandler {
             .arg(&command)
             .current_dir(workspace)
             .output()
-            .map_err(|e| MentalOSError::Io(e))?;
+            .map_err(MentalOSError::Io)?;
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }

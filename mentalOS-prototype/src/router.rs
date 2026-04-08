@@ -286,27 +286,27 @@ impl<E: CommandExecutor> CommandRouter<E> {
             let agent = self.openclaw.get_current_provider();
             match handler.scaffold_project(&request, agent) {
                 Ok(response) => {
-                    if response.success {
-                        if let Ok(memory) = self.memory.lock() {
-                            let mut actions = Vec::new();
-                            if let Some(path) = response.path.clone() {
-                                actions.push(MessageAction {
-                                    action_type: "create_project".to_string(),
-                                    path: Some(path.clone()),
-                                    command: None,
-                                });
-                            }
-                            let _ = memory.append_message_with_actions(
-                                "default",
-                                "general",
-                                Role::Assistant,
-                                response.message.clone(),
-                                actions,
-                            );
-                            if let Some(path) = response.path.clone() {
-                                let _ = memory
-                                    .set_workspace_for_active_session("default", "general", &path);
-                            }
+                    if response.success
+                        && let Ok(memory) = self.memory.lock()
+                    {
+                        let mut actions = Vec::new();
+                        if let Some(path) = response.path.clone() {
+                            actions.push(MessageAction {
+                                action_type: "create_project".to_string(),
+                                path: Some(path.clone()),
+                                command: None,
+                            });
+                        }
+                        let _ = memory.append_message_with_actions(
+                            "default",
+                            "general",
+                            Role::Assistant,
+                            response.message.clone(),
+                            actions,
+                        );
+                        if let Some(path) = response.path.clone() {
+                            let _ = memory
+                                .set_workspace_for_active_session("default", "general", &path);
                         }
                     }
                     Ok((response.success, response.message, response.path))
@@ -651,13 +651,12 @@ fn parse_ai_response(text: &str) -> ParsedResponse {
     let mut seen = HashSet::new();
 
     for (lang, block) in extract_code_blocks(text) {
-        if lang == "json" {
-            if let Ok(parsed) = serde_json::from_str::<StructuredResponse>(&block) {
-                if let Some(mut parsed_commands) = parsed.commands {
-                    for cmd in parsed_commands.drain(..) {
-                        push_unique(&mut commands, &mut seen, cmd);
-                    }
-                }
+        if lang == "json"
+            && let Ok(parsed) = serde_json::from_str::<StructuredResponse>(&block)
+            && let Some(mut parsed_commands) = parsed.commands
+        {
+            for cmd in parsed_commands.drain(..) {
+                push_unique(&mut commands, &mut seen, cmd);
             }
         }
         if lang == "bash" || lang == "sh" || lang == "shell" {
@@ -860,10 +859,10 @@ fn extract_recent_commands(context: &[Message], limit: usize) -> Vec<String> {
     let mut commands = Vec::new();
     for message in context.iter().rev() {
         for action in &message.actions {
-            if let Some(command) = &action.command {
-                if !commands.contains(command) {
-                    commands.push(command.clone());
-                }
+            if let Some(command) = &action.command
+                && !commands.contains(command)
+            {
+                commands.push(command.clone());
             }
             if commands.len() >= limit {
                 break;
@@ -905,19 +904,19 @@ fn extract_user_goals(context: &[Message], input: &str, limit: usize) -> Vec<Str
         if message.role != Role::User {
             continue;
         }
-        if let Some(goal) = infer_goal_phrase(&message.content) {
-            if !goals.contains(&goal) {
-                goals.push(goal);
-            }
+        if let Some(goal) = infer_goal_phrase(&message.content)
+            && !goals.contains(&goal)
+        {
+            goals.push(goal);
         }
         if goals.len() >= limit {
             break;
         }
     }
-    if let Some(goal) = infer_goal_phrase(input) {
-        if !goals.contains(&goal) {
-            goals.push(goal);
-        }
+    if let Some(goal) = infer_goal_phrase(input)
+        && !goals.contains(&goal)
+    {
+        goals.push(goal);
     }
     goals.reverse();
     goals

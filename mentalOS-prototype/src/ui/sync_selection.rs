@@ -348,15 +348,15 @@ fn session_matches_date_range(
     to_date: Option<NaiveDate>,
 ) -> bool {
     let created = session.created_at.date_naive();
-    if let Some(from) = from_date {
-        if created < from {
-            return false;
-        }
+    if let Some(from) = from_date
+        && created < from
+    {
+        return false;
     }
-    if let Some(to) = to_date {
-        if created > to {
-            return false;
-        }
+    if let Some(to) = to_date
+        && created > to
+    {
+        return false;
     }
     true
 }

@@ -230,6 +230,12 @@ impl AppBar {
     }
 }
 
+impl Default for AppBar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{format_current_session_label, memory_button_label, new_chat_button_label};

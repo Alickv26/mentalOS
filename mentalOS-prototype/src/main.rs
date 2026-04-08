@@ -432,27 +432,6 @@ fn write_log_file_line(line: &str) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::expand_home_path;
-
-    #[test]
-    fn expand_home_path_preserves_absolute_path() {
-        let path = expand_home_path("/tmp/workspace");
-        assert_eq!(path, std::path::PathBuf::from("/tmp/workspace"));
-    }
-
-    #[test]
-    fn expand_home_path_handles_tilde_prefix() {
-        let path = expand_home_path("~/workspace");
-        if let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf()) {
-            assert_eq!(path, home.join("workspace"));
-        } else {
-            assert_eq!(path, std::path::PathBuf::from("~/workspace"));
-        }
-    }
-}
-
 fn log_file_path() -> PathBuf {
     if let Ok(path) = std::env::var("MENTALOS_LOG_PATH") {
         let trimmed = path.trim();
@@ -513,5 +492,26 @@ fn load_css() {
         );
     } else {
         log::warn!("Could not get default display for CSS provider");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::expand_home_path;
+
+    #[test]
+    fn expand_home_path_preserves_absolute_path() {
+        let path = expand_home_path("/tmp/workspace");
+        assert_eq!(path, std::path::PathBuf::from("/tmp/workspace"));
+    }
+
+    #[test]
+    fn expand_home_path_handles_tilde_prefix() {
+        let path = expand_home_path("~/workspace");
+        if let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf()) {
+            assert_eq!(path, home.join("workspace"));
+        } else {
+            assert_eq!(path, std::path::PathBuf::from("~/workspace"));
+        }
     }
 }

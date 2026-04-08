@@ -45,3 +45,9 @@ impl HomeScreen {
         // Pill is added separately in main_window
     }
 }
+
+impl Default for HomeScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}

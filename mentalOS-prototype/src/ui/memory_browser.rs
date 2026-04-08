@@ -1,5 +1,6 @@
 use crate::memory::{Conversation, MemoryManager, SessionSummary, default_workspace_root};
 use crate::ui::sync_selection::SyncSelectionDialog;
+use crate::ui::tasks_browser::TasksBrowser;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Box, Button, Entry, Label, Orientation, PolicyType, ScrolledWindow, Window};
@@ -61,6 +62,11 @@ impl MemoryBrowser {
         sync_btn.add_css_class("icon-button");
         sync_btn.set_halign(gtk4::Align::End);
         controls.append(&sync_btn);
+
+        let tasks_btn = Button::with_label("Tasks");
+        tasks_btn.add_css_class("icon-button");
+        tasks_btn.set_halign(gtk4::Align::End);
+        controls.append(&tasks_btn);
         root.append(&controls);
 
         let list_box = Box::new(Orientation::Vertical, 6);
@@ -68,6 +74,11 @@ impl MemoryBrowser {
         let window_for_sync = window.clone();
         sync_btn.connect_clicked(move |_| {
             SyncSelectionDialog::show(&window_for_sync, &workspace_for_sync);
+        });
+
+        let window_for_tasks = window.clone();
+        tasks_btn.connect_clicked(move |_| {
+            TasksBrowser::show(&window_for_tasks);
         });
 
         let manager = MemoryManager::new(default_workspace_root());

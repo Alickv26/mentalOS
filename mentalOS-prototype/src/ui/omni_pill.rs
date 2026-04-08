@@ -165,3 +165,9 @@ impl OmniPill {
         self.stop_btn.connect_clicked(f);
     }
 }
+
+impl Default for OmniPill {
+    fn default() -> Self {
+        Self::new()
+    }
+}

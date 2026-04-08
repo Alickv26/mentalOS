@@ -229,21 +229,20 @@ impl OpenClawClient {
             )));
         }
 
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-            if value.get("commands").is_some() {
-                return Ok(text);
-            }
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
+            && value.get("commands").is_some()
+        {
+            return Ok(text);
         }
 
-        if let Ok(parsed) = serde_json::from_str::<OpenClawResponse>(&text) {
-            if let Some(value) = parsed
+        if let Ok(parsed) = serde_json::from_str::<OpenClawResponse>(&text)
+            && let Some(value) = parsed
                 .message
                 .or(parsed.response)
                 .or(parsed.output)
                 .or(parsed.content)
-            {
-                return Ok(value);
-            }
+        {
+            return Ok(value);
         }
 
         Ok(text)

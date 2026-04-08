@@ -309,11 +309,11 @@ impl MemoryManager {
         };
 
         fs::remove_file(file)?;
-        if let Some(active) = read_active_session_id(&dir) {
-            if active == session_id {
-                let marker = active_session_marker(&dir);
-                let _ = fs::remove_file(marker);
-            }
+        if let Some(active) = read_active_session_id(&dir)
+            && active == session_id
+        {
+            let marker = active_session_marker(&dir);
+            let _ = fs::remove_file(marker);
         }
         Ok(true)
     }
@@ -639,10 +639,10 @@ fn find_session_file(dir: &Path, session_id: &str) -> Result<Option<PathBuf>> {
         if session_id_from_path(&file) == session_id {
             return Ok(Some(file));
         }
-        if let Some(conversation) = load_conversation(&file)? {
-            if conversation.session_id == session_id {
-                return Ok(Some(file));
-            }
+        if let Some(conversation) = load_conversation(&file)?
+            && conversation.session_id == session_id
+        {
+            return Ok(Some(file));
         }
     }
     Ok(None)

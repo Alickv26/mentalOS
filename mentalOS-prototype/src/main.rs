@@ -29,10 +29,10 @@ static LOG_FILE: OnceLock<Mutex<fs::File>> = OnceLock::new();
 static LOG_FILE_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 fn expand_home_path(path: &str) -> PathBuf {
-    if let Some(stripped) = path.strip_prefix("~/") {
-        if let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf()) {
-            return home.join(stripped);
-        }
+    if let Some(stripped) = path.strip_prefix("~/")
+        && let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf())
+    {
+        return home.join(stripped);
     }
     PathBuf::from(path)
 }
@@ -298,10 +298,10 @@ fn main() {
             let ui_tx_for_wizard = ui_tx.clone();
             let win_for_onboarding_from_wizard = win_for_onboarding.clone();
             ConfigWizard::show(&win.window, move || {
-                if let Some(tx) = handshake_for_wizard.borrow_mut().take() {
-                    if let Err(err) = tx.send(ui_tx_for_wizard.clone()) {
-                        log::warn!("Failed to send UI handshake after setup wizard: {}", err);
-                    }
+                if let Some(tx) = handshake_for_wizard.borrow_mut().take()
+                    && let Err(err) = tx.send(ui_tx_for_wizard.clone())
+                {
+                    log::warn!("Failed to send UI handshake after setup wizard: {}", err);
                 }
                 show_onboarding_if_needed(&win_for_onboarding_from_wizard);
             });
@@ -425,10 +425,10 @@ fn rotate_log_file_if_needed(path: &std::path::Path, max_bytes: u64) -> std::io:
 
 fn write_log_file_line(line: &str) {
     use std::io::Write;
-    if let Some(lock) = LOG_FILE.get() {
-        if let Ok(mut file) = lock.lock() {
-            let _ = writeln!(file, "{}", line);
-        }
+    if let Some(lock) = LOG_FILE.get()
+        && let Ok(mut file) = lock.lock()
+    {
+        let _ = writeln!(file, "{}", line);
     }
 }
 
@@ -461,10 +461,10 @@ fn log_file_path() -> PathBuf {
         }
     }
 
-    if let Some(base) = directories::BaseDirs::new() {
-        if let Some(state_dir) = base.state_dir() {
-            return state_dir.join("mentalOS").join("logs").join("mentalOS.log");
-        }
+    if let Some(base) = directories::BaseDirs::new()
+        && let Some(state_dir) = base.state_dir()
+    {
+        return state_dir.join("mentalOS").join("logs").join("mentalOS.log");
     }
 
     PathBuf::from("/tmp/mentalOS.log")

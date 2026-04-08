@@ -85,6 +85,12 @@ impl NotificationCenter {
     }
 }
 
+impl Default for NotificationCenter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn level_css_class(level: NotificationLevel) -> &'static str {
     match level {
         NotificationLevel::Info => "notification-info",

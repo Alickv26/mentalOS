@@ -14,6 +14,7 @@ pub mod project_dialog;
 pub mod shortcuts;
 pub mod shortcuts_help;
 pub mod shortcuts_settings;
+pub mod sync_selection;
 
 pub use approval::{ApprovalDecision, ApprovalDialog};
 pub use config_wizard::ConfigWizard;
@@ -25,3 +26,4 @@ pub use project_dialog::{ProjectDecision, ProjectDialog};
 pub use shortcuts::{SHORTCUT_DEFINITIONS, ShortcutBindings};
 pub use shortcuts_help::ShortcutsHelp;
 pub use shortcuts_settings::ShortcutsSettings;
+pub use sync_selection::SyncSelectionDialog;

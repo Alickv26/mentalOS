@@ -1,4 +1,5 @@
 use crate::memory::{Conversation, MemoryManager, SessionSummary, default_workspace_root};
+use crate::ui::sync_selection::SyncSelectionDialog;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Box, Button, Entry, Label, Orientation, PolicyType, ScrolledWindow, Window};
@@ -55,9 +56,19 @@ impl MemoryBrowser {
         delete_btn.set_halign(gtk4::Align::Start);
         delete_btn.set_visible(false);
         controls.append(&delete_btn);
+
+        let sync_btn = Button::with_label("Sync selection");
+        sync_btn.add_css_class("icon-button");
+        sync_btn.set_halign(gtk4::Align::End);
+        controls.append(&sync_btn);
         root.append(&controls);
 
         let list_box = Box::new(Orientation::Vertical, 6);
+        let workspace_for_sync = workspace.to_string();
+        let window_for_sync = window.clone();
+        sync_btn.connect_clicked(move |_| {
+            SyncSelectionDialog::show(&window_for_sync, &workspace_for_sync);
+        });
 
         let manager = MemoryManager::new(default_workspace_root());
         match manager.list_sessions(workspace) {
@@ -595,6 +606,7 @@ mod tests {
             title: Some("Build CLI".to_string()),
             created_at: Utc.with_ymd_and_hms(2026, 3, 16, 10, 0, 0).unwrap(),
             last_active: Utc.with_ymd_and_hms(2026, 3, 16, 11, 0, 0).unwrap(),
+            local_only: false,
         };
         assert!(matches_session_query(&session, "cli"));
         assert!(matches_session_query(&session, "general"));
@@ -611,6 +623,7 @@ mod tests {
             title: Some("First".to_string()),
             created_at: Utc.with_ymd_and_hms(2026, 3, 16, 10, 0, 0).unwrap(),
             last_active: Utc.with_ymd_and_hms(2026, 3, 16, 11, 0, 0).unwrap(),
+            local_only: false,
         };
         let s2 = SessionSummary {
             workspace: "demo".to_string(),
@@ -619,6 +632,7 @@ mod tests {
             title: Some("Active".to_string()),
             created_at: Utc.with_ymd_and_hms(2026, 3, 16, 10, 0, 0).unwrap(),
             last_active: Utc.with_ymd_and_hms(2026, 3, 16, 12, 0, 0).unwrap(),
+            local_only: false,
         };
         let sessions = [s1, s2];
         let ordered = ordered_sessions(&sessions, Some("active"));

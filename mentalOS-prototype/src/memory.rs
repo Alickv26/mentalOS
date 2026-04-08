@@ -44,6 +44,8 @@ pub struct ConversationMetadata {
     pub total_tokens: u64,
     #[serde(default)]
     pub commands_executed: u64,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub local_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +68,7 @@ pub struct SessionSummary {
     pub title: Option<String>,
     pub created_at: DateTime<Utc>,
     pub last_active: DateTime<Utc>,
+    pub local_only: bool,
 }
 
 /// Manages per-workspace, per-category conversation memory.
@@ -200,6 +203,7 @@ impl MemoryManager {
                         title: conversation.title,
                         created_at: conversation.created_at,
                         last_active: conversation.last_active,
+                        local_only: conversation.metadata.local_only,
                     });
                 }
             }
@@ -277,6 +281,29 @@ impl MemoryManager {
                 let _ = fs::remove_file(marker);
             }
         }
+        Ok(true)
+    }
+
+    pub fn set_local_only(
+        &self,
+        workspace: &str,
+        category: &str,
+        session_id: &str,
+        local_only: bool,
+    ) -> Result<bool> {
+        let dir = self.category_dir(workspace, &normalize_category(category));
+        if !dir.exists() {
+            return Ok(false);
+        }
+        let Some(file) = find_session_file(&dir, session_id)? else {
+            return Ok(false);
+        };
+        let Some(mut conversation) = load_conversation(&file)? else {
+            return Ok(false);
+        };
+        conversation.metadata.local_only = local_only;
+        let serialized = serde_json::to_string_pretty(&conversation)?;
+        fs::write(file, serialized)?;
         Ok(true)
     }
 
@@ -493,6 +520,10 @@ fn generate_session_id() -> String {
     format!("{:x}", raw.abs())
 }
 
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct LegacyConversation {
     id: Option<String>,
@@ -660,5 +691,31 @@ mod tests {
         assert!(deleted);
         assert_eq!(manager.list_sessions("demo").unwrap().len(), 0);
         assert_eq!(manager.active_session_id("demo", "general").unwrap(), None);
+    }
+
+    #[test]
+    fn set_local_only_persists_in_summary() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+        manager
+            .append_message("demo", "general", Role::User, "hello")
+            .unwrap();
+        let session = manager
+            .list_sessions("demo")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let updated = manager
+            .set_local_only("demo", "general", &session.session_id, true)
+            .unwrap();
+        assert!(updated);
+        let after = manager
+            .list_sessions("demo")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(after.local_only);
     }
 }

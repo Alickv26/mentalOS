@@ -131,14 +131,18 @@ impl MainWindow {
         let win_for_memory = window.clone();
         let chat_for_memory = chat_view.clone();
         let input_for_memory = pill.input.clone();
+        let app_bar_for_memory = app_bar.clone();
         app_bar.connect_memory_clicked(move |_| {
             let win_ref = win_for_memory.clone();
             let chat_ref = chat_for_memory.clone();
             let input_ref = input_for_memory.clone();
-            MemoryBrowser::show(&win_for_memory, "default", move |conversation, _summary| {
+            let bar_ref = app_bar_for_memory.clone();
+            MemoryBrowser::show(&win_for_memory, "default", move |conversation, summary| {
                 chat_ref.container.set_visible(true);
                 win_ref.set_default_height(500);
                 chat_ref.load_conversation(&conversation);
+                let label = summary.title.as_deref().unwrap_or(&summary.session_id);
+                bar_ref.set_current_session(label);
                 input_ref.grab_focus();
             });
         });
@@ -163,6 +167,7 @@ impl MainWindow {
             set_visual_state(&root_for_new, &pill_for_new, AiState::Sleep);
             app_bar_for_new.set_status("Idle");
             app_bar_for_new.set_busy(false);
+            app_bar_for_new.clear_current_session();
             input_for_new.grab_focus();
         });
         let start_new_chat_btn = start_new_chat.clone();
@@ -427,10 +432,13 @@ impl MainWindow {
                 let chat_ref = chat_view.clone();
                 let win_ref = win_for_keys.clone();
                 let input_ref = input_for_keys.clone();
-                MemoryBrowser::show(&win_for_keys, "default", move |conversation, _summary| {
+                let bar_ref = app_bar_for_keys.clone();
+                MemoryBrowser::show(&win_for_keys, "default", move |conversation, summary| {
                     chat_ref.container.set_visible(true);
                     win_ref.set_default_height(500);
                     chat_ref.load_conversation(&conversation);
+                    let label = summary.title.as_deref().unwrap_or(&summary.session_id);
+                    bar_ref.set_current_session(label);
                     input_ref.grab_focus();
                 });
                 return glib::Propagation::Stop;

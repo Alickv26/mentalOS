@@ -9,6 +9,7 @@ use sysinfo::System;
 pub struct AppBar {
     pub container: Box,
     status_label: Label,
+    session_label: Label,
     _cpu_label: Label,
     _mem_label: Label,
     new_chat_btn: Button,
@@ -24,6 +25,10 @@ fn memory_button_label() -> &'static str {
 
 fn new_chat_button_label() -> &'static str {
     "New chat"
+}
+
+fn format_current_session_label(session: &str) -> String {
+    format!("Session: {session}")
 }
 
 impl AppBar {
@@ -54,6 +59,16 @@ impl AppBar {
             gtk4::accessible::Property::Description("Current AI runtime status."),
         ]);
         row.append(&status_label);
+
+        let session_label = Label::new(None);
+        session_label.add_css_class("app-bar-stats");
+        session_label.set_halign(gtk4::Align::Start);
+        session_label.set_visible(false);
+        session_label.update_property(&[
+            gtk4::accessible::Property::Label("Current session"),
+            gtk4::accessible::Property::Description("Currently active conversation session."),
+        ]);
+        row.append(&session_label);
 
         // ── System stats ──
         let cpu_label = Label::new(Some("CPU: --%"));
@@ -121,6 +136,7 @@ impl AppBar {
         let bar = Self {
             container,
             status_label,
+            session_label,
             _cpu_label: cpu_label.clone(),
             _mem_label: mem_label.clone(),
             new_chat_btn: new_chat_btn.clone(),
@@ -201,11 +217,22 @@ impl AppBar {
             self.progress.set_fraction(0.0);
         }
     }
+
+    pub fn set_current_session(&self, session: &str) {
+        self.session_label
+            .set_text(&format_current_session_label(session));
+        self.session_label.set_visible(true);
+    }
+
+    pub fn clear_current_session(&self) {
+        self.session_label.set_text("");
+        self.session_label.set_visible(false);
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{memory_button_label, new_chat_button_label};
+    use super::{format_current_session_label, memory_button_label, new_chat_button_label};
 
     #[test]
     fn memory_button_label_is_stable() {
@@ -215,5 +242,13 @@ mod tests {
     #[test]
     fn new_chat_button_label_is_stable() {
         assert_eq!(new_chat_button_label(), "New chat");
+    }
+
+    #[test]
+    fn current_session_label_formats_consistently() {
+        assert_eq!(
+            format_current_session_label("Build CLI"),
+            "Session: Build CLI"
+        );
     }
 }

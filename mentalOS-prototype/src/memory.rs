@@ -247,6 +247,14 @@ impl MemoryManager {
         Ok(marker)
     }
 
+    pub fn active_session_id(&self, workspace: &str, category: &str) -> Result<Option<String>> {
+        let dir = self.category_dir(workspace, &normalize_category(category));
+        if !dir.exists() {
+            return Ok(None);
+        }
+        Ok(read_active_session_id(&dir))
+    }
+
     fn category_dir(&self, workspace: &str, category: &str) -> PathBuf {
         self.workspace_dir
             .join(workspace)
@@ -591,5 +599,16 @@ mod tests {
         let loaded = manager.load_session("demo", "general", session_id).unwrap();
         assert!(loaded.is_some());
         assert_eq!(loaded.unwrap().session_id, session_id);
+    }
+
+    #[test]
+    fn active_session_id_reads_saved_marker() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+        manager
+            .set_active_session("demo", "general", "session-42")
+            .unwrap();
+        let active = manager.active_session_id("demo", "general").unwrap();
+        assert_eq!(active, Some("session-42".to_string()));
     }
 }

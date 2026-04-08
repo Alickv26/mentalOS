@@ -1,6 +1,8 @@
 use crate::memory::{Conversation, MemoryManager, SessionSummary, default_workspace_root};
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Box, Button, Entry, Label, Orientation, PolicyType, ScrolledWindow, Window};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct MemoryBrowser;
@@ -41,6 +43,12 @@ impl MemoryBrowser {
         summary.add_css_class("app-bar-stats");
         root.append(&summary);
 
+        let resume_btn = Button::with_label("Resume current");
+        resume_btn.add_css_class("icon-button");
+        resume_btn.set_halign(gtk4::Align::Start);
+        resume_btn.set_visible(false);
+        root.append(&resume_btn);
+
         let list_box = Box::new(Orientation::Vertical, 6);
 
         let manager = MemoryManager::new(default_workspace_root());
@@ -49,27 +57,94 @@ impl MemoryBrowser {
                 let sessions = Rc::new(sessions);
                 let manager = Rc::new(manager);
                 let on_select: Rc<dyn Fn(Conversation, SessionSummary)> = Rc::new(on_select);
-                populate_sessions(
-                    &list_box, &summary, &sessions, &manager, &on_select, &window, "",
+                let workspace_name = workspace.to_string();
+                let active_session = Rc::new(RefCell::new(None::<SessionSummary>));
+
+                refresh_browser_state(
+                    &list_box,
+                    &summary,
+                    &resume_btn,
+                    &sessions,
+                    &manager,
+                    &on_select,
+                    &window,
+                    &workspace_name,
+                    &active_session,
+                    "",
                 );
+
+                let manager_ref = manager.clone();
+                let on_select_ref = on_select.clone();
+                let window_ref = window.clone();
+                let active_ref = active_session.clone();
+                resume_btn.connect_clicked(move |_| {
+                    if let Some(session) = active_ref.borrow().clone() {
+                        open_session(&manager_ref, on_select_ref.clone(), &window_ref, &session);
+                    }
+                });
 
                 let list_ref = list_box.clone();
                 let summary_ref = summary.clone();
+                let resume_ref = resume_btn.clone();
                 let sessions_ref = sessions.clone();
                 let manager_ref = manager.clone();
                 let on_select_ref = on_select.clone();
                 let window_ref = window.clone();
+                let workspace_ref = workspace_name.clone();
+                let active_ref = active_session.clone();
                 search.connect_changed(move |entry| {
                     let query = entry.text().to_string();
-                    populate_sessions(
+                    refresh_browser_state(
                         &list_ref,
                         &summary_ref,
+                        &resume_ref,
                         &sessions_ref,
                         &manager_ref,
                         &on_select_ref,
                         &window_ref,
+                        &workspace_ref,
+                        &active_ref,
                         &query,
                     );
+                });
+
+                let manager_ref = manager.clone();
+                let on_select_ref = on_select.clone();
+                let window_ref = window.clone();
+                let active_ref = active_session.clone();
+                search.connect_activate(move |_| {
+                    if let Some(session) = active_ref.borrow().clone() {
+                        open_session(&manager_ref, on_select_ref.clone(), &window_ref, &session);
+                    }
+                });
+
+                let search_ref = search.clone();
+                let list_ref = list_box.clone();
+                let summary_ref = summary.clone();
+                let resume_ref = resume_btn.clone();
+                let sessions_ref = sessions.clone();
+                let manager_ref = manager.clone();
+                let on_select_ref = on_select.clone();
+                let window_ref = window.clone();
+                let workspace_ref = workspace_name.clone();
+                let active_ref = active_session.clone();
+                glib::timeout_add_seconds_local(1, move || {
+                    if !window_ref.is_visible() {
+                        return glib::ControlFlow::Break;
+                    }
+                    refresh_browser_state(
+                        &list_ref,
+                        &summary_ref,
+                        &resume_ref,
+                        &sessions_ref,
+                        &manager_ref,
+                        &on_select_ref,
+                        &window_ref,
+                        &workspace_ref,
+                        &active_ref,
+                        &search_ref.text(),
+                    );
+                    glib::ControlFlow::Continue
                 });
             }
             Ok(_) => {
@@ -129,6 +204,116 @@ fn matches_session_query(session: &SessionSummary, query_lower: &str) -> bool {
         || session.session_id.to_lowercase().contains(query_lower)
 }
 
+fn detect_active_session_id(
+    workspace: &str,
+    sessions: &[SessionSummary],
+    manager: &MemoryManager,
+) -> Option<String> {
+    for session in sessions {
+        if let Ok(Some(active)) = manager.active_session_id(workspace, &session.category) {
+            if active != "NEW" && active == session.session_id {
+                return Some(active);
+            }
+        }
+    }
+    None
+}
+
+fn find_session(sessions: &[SessionSummary], session_id: &str) -> Option<SessionSummary> {
+    sessions
+        .iter()
+        .find(|s| s.session_id == session_id)
+        .cloned()
+}
+
+fn refresh_browser_state(
+    list_box: &Box,
+    summary: &Label,
+    resume_btn: &Button,
+    sessions: &[SessionSummary],
+    manager: &Rc<MemoryManager>,
+    on_select: &Rc<dyn Fn(Conversation, SessionSummary)>,
+    window: &Window,
+    workspace: &str,
+    active_session: &Rc<RefCell<Option<SessionSummary>>>,
+    query: &str,
+) {
+    let active_session_id = detect_active_session_id(workspace, sessions, manager);
+    let active_summary = active_session_id
+        .as_deref()
+        .and_then(|session_id| find_session(sessions, session_id));
+
+    if let Some(session) = active_summary.clone() {
+        let label = session.title.as_deref().unwrap_or(&session.session_id);
+        resume_btn.set_label(&format!("Resume current: {label}"));
+        resume_btn.set_visible(true);
+        *active_session.borrow_mut() = Some(session);
+    } else {
+        resume_btn.set_visible(false);
+        *active_session.borrow_mut() = None;
+    }
+
+    populate_sessions(
+        list_box,
+        summary,
+        sessions,
+        manager,
+        on_select,
+        window,
+        query,
+        active_session_id.as_deref(),
+    );
+}
+
+fn ordered_filtered_sessions<'a>(
+    sessions: &'a [SessionSummary],
+    query_lower: &str,
+    active_session_id: Option<&str>,
+) -> Vec<&'a SessionSummary> {
+    let mut filtered: Vec<&SessionSummary> = sessions
+        .iter()
+        .filter(|session| matches_session_query(session, query_lower))
+        .collect();
+
+    if let Some(active) = active_session_id {
+        if let Some(index) = filtered
+            .iter()
+            .position(|session| session.session_id == active)
+        {
+            let active_session = filtered.remove(index);
+            filtered.insert(0, active_session);
+        }
+    }
+
+    filtered
+}
+
+fn open_session(
+    manager: &MemoryManager,
+    on_select: Rc<dyn Fn(Conversation, SessionSummary)>,
+    window: &Window,
+    session: &SessionSummary,
+) {
+    let loaded = manager.load_session(&session.workspace, &session.category, &session.session_id);
+    match loaded {
+        Ok(Some(conversation)) => {
+            let _ = manager.set_active_session(
+                &session.workspace,
+                &session.category,
+                &session.session_id,
+            );
+            (on_select)(conversation, session.clone());
+            window.close();
+        }
+        Ok(None) => {
+            log::warn!("Session not found: {}", session.session_id);
+        }
+        Err(err) => {
+            log::warn!("Failed to load session {}: {}", session.session_id, err);
+        }
+    }
+}
+
 fn populate_sessions(
     list_box: &Box,
     summary: &Label,
@@ -137,18 +322,17 @@ fn populate_sessions(
     on_select: &Rc<dyn Fn(Conversation, SessionSummary)>,
     window: &Window,
     query: &str,
+    active_session_id: Option<&str>,
 ) {
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
 
     let query_lower = query.to_lowercase();
+    let filtered_sessions = ordered_filtered_sessions(sessions, &query_lower, active_session_id);
     let mut shown = 0usize;
 
-    for session in sessions.iter() {
-        if !matches_session_query(session, &query_lower) {
-            continue;
-        }
+    for session in filtered_sessions.iter() {
         if shown >= 30 {
             break;
         }
@@ -157,6 +341,10 @@ fn populate_sessions(
         let btn = Button::new();
         btn.add_css_class("launcher-item");
         let row = Box::new(Orientation::Vertical, 2);
+
+        if active_session_id == Some(session.session_id.as_str()) {
+            btn.add_css_class("active-memory-session");
+        }
 
         let title_text = session
             .title
@@ -168,49 +356,34 @@ fn populate_sessions(
         head.add_css_class("message-content");
         row.append(&head);
 
+        let active_suffix = if active_session_id == Some(session.session_id.as_str()) {
+            "   active"
+        } else {
+            ""
+        };
         let details = format!(
             "category: {}   created: {}   last active: {}",
             session.category,
             session.created_at.format("%Y-%m-%d %H:%M"),
             session.last_active.format("%Y-%m-%d %H:%M")
         );
-        let meta = Label::new(Some(&details));
+        let meta = Label::new(Some(&(details + active_suffix)));
         meta.set_halign(gtk4::Align::Start);
         meta.add_css_class("app-bar-stats");
         row.append(&meta);
 
         btn.set_child(Some(&row));
-        let session_clone = session.clone();
+        let session_clone = (*session).clone();
         let manager_ref = Rc::clone(manager);
         let window_ref = window.clone();
         let on_select_ref = Rc::clone(on_select);
         btn.connect_clicked(move |_| {
-            let loaded = manager_ref.load_session(
-                &session_clone.workspace,
-                &session_clone.category,
-                &session_clone.session_id,
+            open_session(
+                &manager_ref,
+                on_select_ref.clone(),
+                &window_ref,
+                &session_clone,
             );
-            match loaded {
-                Ok(Some(conversation)) => {
-                    let _ = manager_ref.set_active_session(
-                        &session_clone.workspace,
-                        &session_clone.category,
-                        &session_clone.session_id,
-                    );
-                    on_select_ref(conversation, session_clone.clone());
-                    window_ref.close();
-                }
-                Ok(None) => {
-                    log::warn!("Session not found: {}", session_clone.session_id);
-                }
-                Err(err) => {
-                    log::warn!(
-                        "Failed to load session {}: {}",
-                        session_clone.session_id,
-                        err
-                    );
-                }
-            }
         });
 
         list_box.append(&btn);
@@ -233,7 +406,10 @@ fn populate_sessions(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_filtered_summary, format_session_summary, matches_session_query};
+    use super::{
+        format_filtered_summary, format_session_summary, matches_session_query,
+        ordered_filtered_sessions,
+    };
     use crate::memory::SessionSummary;
     use chrono::{TimeZone, Utc};
 
@@ -264,5 +440,28 @@ mod tests {
         assert!(matches_session_query(&session, "general"));
         assert!(matches_session_query(&session, "abc"));
         assert!(!matches_session_query(&session, "missing"));
+    }
+
+    #[test]
+    fn active_session_is_pinned_first() {
+        let s1 = SessionSummary {
+            workspace: "demo".to_string(),
+            category: "general".to_string(),
+            session_id: "first".to_string(),
+            title: Some("First".to_string()),
+            created_at: Utc.with_ymd_and_hms(2026, 3, 16, 10, 0, 0).unwrap(),
+            last_active: Utc.with_ymd_and_hms(2026, 3, 16, 11, 0, 0).unwrap(),
+        };
+        let s2 = SessionSummary {
+            workspace: "demo".to_string(),
+            category: "general".to_string(),
+            session_id: "active".to_string(),
+            title: Some("Active".to_string()),
+            created_at: Utc.with_ymd_and_hms(2026, 3, 16, 10, 0, 0).unwrap(),
+            last_active: Utc.with_ymd_and_hms(2026, 3, 16, 12, 0, 0).unwrap(),
+        };
+        let sessions = [s1, s2];
+        let ordered = ordered_filtered_sessions(&sessions, "", Some("active"));
+        assert_eq!(ordered[0].session_id, "active");
     }
 }

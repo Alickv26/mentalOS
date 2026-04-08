@@ -86,6 +86,14 @@ pub struct SyncPayload {
     pub redactions: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct SyncExportResult {
+    pub path: PathBuf,
+    pub exported_count: usize,
+    pub skipped_local_only: usize,
+    pub redactions: usize,
+}
+
 /// Manages per-workspace, per-category conversation memory.
 ///
 /// # Examples
@@ -370,6 +378,30 @@ impl MemoryManager {
             conversations,
             skipped_local_only,
             redactions,
+        })
+    }
+
+    pub fn export_sync_payload(
+        &self,
+        workspace: &str,
+        selected: &[(String, String)],
+    ) -> Result<SyncExportResult> {
+        let payload = self.build_sync_payload(workspace, selected)?;
+        let export_dir = self
+            .workspace_dir
+            .join(workspace)
+            .join(".memory")
+            .join("sync-exports");
+        fs::create_dir_all(&export_dir)?;
+        let filename = format!("sync-export-{}.json", Utc::now().format("%Y%m%d-%H%M%S"));
+        let path = export_dir.join(filename);
+        let serialized = serde_json::to_string_pretty(&payload)?;
+        fs::write(&path, serialized)?;
+        Ok(SyncExportResult {
+            path,
+            exported_count: payload.conversations.len(),
+            skipped_local_only: payload.skipped_local_only,
+            redactions: payload.redactions,
         })
     }
 
@@ -1046,5 +1078,29 @@ mod tests {
             .load_related_conversation_for_project("demo", &project)
             .unwrap();
         assert!(loaded.is_some());
+    }
+
+    #[test]
+    fn export_sync_payload_writes_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+        manager
+            .append_message("demo", "general", Role::User, "token=super-secret")
+            .unwrap();
+        let session = manager
+            .list_sessions("demo")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let export = manager
+            .export_sync_payload(
+                "demo",
+                &[(session.category.clone(), session.session_id.clone())],
+            )
+            .unwrap();
+        assert!(export.path.exists());
+        assert_eq!(export.exported_count, 1);
+        assert!(export.redactions >= 1);
     }
 }

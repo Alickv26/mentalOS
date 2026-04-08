@@ -77,9 +77,12 @@ impl SyncSelectionDialog {
         actions.set_halign(Align::End);
         let close_btn = Button::with_label("Close");
         let apply_btn = Button::with_label("Apply Selection");
+        let export_btn = Button::with_label("Export JSON");
         apply_btn.add_css_class("create-button");
+        export_btn.add_css_class("create-button");
         actions.append(&close_btn);
         actions.append(&apply_btn);
+        actions.append(&export_btn);
         root.append(&actions);
 
         window.set_child(Some(&root));
@@ -171,6 +174,33 @@ impl SyncSelectionDialog {
                 }
                 Err(err) => {
                     status_ref.set_text(&format!("Failed to build sync payload: {err}"));
+                }
+            }
+        });
+
+        let rows_ref = row_state.clone();
+        let status_ref = status.clone();
+        let manager_ref = manager.clone();
+        let workspace_ref = workspace_name.clone();
+        export_btn.connect_clicked(move |_| {
+            let rows = rows_ref.borrow();
+            let selected_pairs: Vec<(String, String)> = rows
+                .iter()
+                .filter(|r| r.include_toggle.is_active())
+                .map(|r| (r.category.clone(), r.session_id.clone()))
+                .collect();
+            match manager_ref.export_sync_payload(&workspace_ref, &selected_pairs) {
+                Ok(result) => {
+                    status_ref.set_text(&format!(
+                        "Exported {} conversations to {} (local-only excluded: {}, redactions: {}).",
+                        result.exported_count,
+                        result.path.display(),
+                        result.skipped_local_only,
+                        result.redactions
+                    ));
+                }
+                Err(err) => {
+                    status_ref.set_text(&format!("Failed to export sync payload: {err}"));
                 }
             }
         });

@@ -169,11 +169,10 @@ impl ShortcutsSettings {
                 Err(err) => {
                     if let Some((action_id, _)) =
                         extract_action_id_from_validation_error(&err.to_string())
+                        && let Some(entry) = entry_map_for_save.borrow().get(action_id)
                     {
-                        if let Some(entry) = entry_map_for_save.borrow().get(action_id) {
-                            set_entry_validation_state(entry, false);
-                            entry.grab_focus();
-                        }
+                        set_entry_validation_state(entry, false);
+                        entry.grab_focus();
                     }
                     status_for_save.remove_css_class(status_class_for_result(true));
                     status_for_save.add_css_class(status_class_for_result(false));

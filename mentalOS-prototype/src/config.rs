@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 /// ```
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub ai: AiConfig,
@@ -121,18 +121,6 @@ impl Default for PathsConfig {
     fn default() -> Self {
         Self {
             workspace_dir: default_workspace_dir(),
-        }
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            ai: AiConfig::default(),
-            openclaw: OpenClawConfig::default(),
-            ollama: OllamaConfig::default(),
-            paths: PathsConfig::default(),
-            agents: HashMap::new(),
         }
     }
 }

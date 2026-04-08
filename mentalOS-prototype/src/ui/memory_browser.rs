@@ -297,10 +297,11 @@ fn detect_active_session_id(
     manager: &MemoryManager,
 ) -> Option<String> {
     for session in sessions {
-        if let Ok(Some(active)) = manager.active_session_id(workspace, &session.category) {
-            if active != "NEW" && active == session.session_id {
-                return Some(active);
-            }
+        if let Ok(Some(active)) = manager.active_session_id(workspace, &session.category)
+            && active != "NEW"
+            && active == session.session_id
+        {
+            return Some(active);
         }
     }
     None
@@ -368,14 +369,13 @@ fn ordered_sessions<'a>(
 ) -> Vec<&'a SessionSummary> {
     let mut filtered: Vec<&SessionSummary> = sessions.iter().collect();
 
-    if let Some(active) = active_session_id {
-        if let Some(index) = filtered
+    if let Some(active) = active_session_id
+        && let Some(index) = filtered
             .iter()
             .position(|session| session.session_id == active)
-        {
-            let active_session = filtered.remove(index);
-            filtered.insert(0, active_session);
-        }
+    {
+        let active_session = filtered.remove(index);
+        filtered.insert(0, active_session);
     }
 
     filtered

@@ -71,6 +71,21 @@ pub struct SessionSummary {
     pub local_only: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncConversation {
+    pub category: String,
+    pub conversation: Conversation,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncPayload {
+    pub workspace: String,
+    pub exported_at: DateTime<Utc>,
+    pub conversations: Vec<SyncConversation>,
+    pub skipped_local_only: usize,
+    pub redactions: usize,
+}
+
 /// Manages per-workspace, per-category conversation memory.
 ///
 /// # Examples
@@ -307,6 +322,46 @@ impl MemoryManager {
         Ok(true)
     }
 
+    pub fn build_sync_payload(
+        &self,
+        workspace: &str,
+        selected: &[(String, String)],
+    ) -> Result<SyncPayload> {
+        let mut conversations = Vec::new();
+        let mut skipped_local_only = 0usize;
+        let mut redactions = 0usize;
+
+        for (category, session_id) in selected {
+            let loaded = self.load_session(workspace, category, session_id)?;
+            let Some(mut conversation) = loaded else {
+                continue;
+            };
+            if conversation.metadata.local_only {
+                skipped_local_only += 1;
+                continue;
+            }
+            for message in &mut conversation.messages {
+                let (updated, count) = redact_sensitive_text(&message.content);
+                if count > 0 {
+                    message.content = updated;
+                    redactions += count;
+                }
+            }
+            conversations.push(SyncConversation {
+                category: category.clone(),
+                conversation,
+            });
+        }
+
+        Ok(SyncPayload {
+            workspace: workspace.to_string(),
+            exported_at: Utc::now(),
+            conversations,
+            skipped_local_only,
+            redactions,
+        })
+    }
+
     fn category_dir(&self, workspace: &str, category: &str) -> PathBuf {
         self.workspace_dir
             .join(workspace)
@@ -524,6 +579,46 @@ fn is_false(v: &bool) -> bool {
     !*v
 }
 
+fn redact_sensitive_text(content: &str) -> (String, usize) {
+    let mut redacted = content.to_string();
+    let mut count = 0usize;
+
+    let sensitive_prefixes = ["sk-", "ghp_", "xoxb-", "xoxp-", "xoxs-", "AIza", "Bearer "];
+    for prefix in sensitive_prefixes {
+        while let Some(start) = redacted.find(prefix) {
+            let end = redacted[start..]
+                .find(char::is_whitespace)
+                .map(|idx| start + idx)
+                .unwrap_or(redacted.len());
+            redacted.replace_range(start..end, "[REDACTED]");
+            count += 1;
+        }
+    }
+
+    let mut lines = Vec::new();
+    for line in redacted.lines() {
+        let lowered = line.to_lowercase();
+        let mut replaced = line.to_string();
+        for marker in ["api_key", "token", "password", "secret", "authorization"] {
+            if lowered.contains(marker) {
+                if let Some(idx) = replaced.find('=') {
+                    replaced = format!("{}=[REDACTED]", &replaced[..idx].trim());
+                    count += 1;
+                    break;
+                }
+                if let Some(idx) = replaced.find(':') {
+                    replaced = format!("{}: [REDACTED]", &replaced[..idx].trim());
+                    count += 1;
+                    break;
+                }
+            }
+        }
+        lines.push(replaced);
+    }
+
+    (lines.join("\n"), count)
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct LegacyConversation {
     id: Option<String>,
@@ -717,5 +812,48 @@ mod tests {
             .next()
             .unwrap();
         assert!(after.local_only);
+    }
+
+    #[test]
+    fn build_sync_payload_skips_local_only_and_redacts_tokens() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+        manager
+            .append_message(
+                "demo",
+                "general",
+                Role::User,
+                "api_key=abc123\nAuthorization: Bearer secret-token-value",
+            )
+            .unwrap();
+        let session = manager
+            .list_sessions("demo")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let payload = manager
+            .build_sync_payload(
+                "demo",
+                &[(session.category.clone(), session.session_id.clone())],
+            )
+            .unwrap();
+        assert_eq!(payload.conversations.len(), 1);
+        assert!(payload.redactions >= 1);
+        let content = &payload.conversations[0].conversation.messages[0].content;
+        assert!(!content.contains("abc123"));
+        assert!(!content.contains("secret-token-value"));
+
+        manager
+            .set_local_only("demo", "general", &session.session_id, true)
+            .unwrap();
+        let payload = manager
+            .build_sync_payload(
+                "demo",
+                &[(session.category.clone(), session.session_id.clone())],
+            )
+            .unwrap();
+        assert_eq!(payload.conversations.len(), 0);
+        assert_eq!(payload.skipped_local_only, 1);
     }
 }

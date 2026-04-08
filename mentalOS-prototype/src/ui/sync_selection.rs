@@ -11,6 +11,8 @@ pub struct SyncSelectionDialog;
 
 #[derive(Clone)]
 struct SessionRowState {
+    category: String,
+    session_id: String,
     include_toggle: CheckButton,
     local_only_toggle: CheckButton,
 }
@@ -148,17 +150,29 @@ impl SyncSelectionDialog {
 
         let rows_ref = row_state.clone();
         let status_ref = status.clone();
+        let manager_ref = manager.clone();
+        let workspace_ref = workspace_name.clone();
         apply_btn.connect_clicked(move |_| {
             let rows = rows_ref.borrow();
-            let selected = rows.iter().filter(|r| r.include_toggle.is_active()).count();
-            let local_only_selected = rows
+            let selected_pairs: Vec<(String, String)> = rows
                 .iter()
-                .filter(|r| r.include_toggle.is_active() && r.local_only_toggle.is_active())
-                .count();
-            let effective = selected.saturating_sub(local_only_selected);
-            status_ref.set_text(&format!(
-                "Selected {selected} conversations. Sync-eligible: {effective}. Local-only excluded: {local_only_selected}."
-            ));
+                .filter(|r| r.include_toggle.is_active())
+                .map(|r| (r.category.clone(), r.session_id.clone()))
+                .collect();
+            match manager_ref.build_sync_payload(&workspace_ref, &selected_pairs) {
+                Ok(payload) => {
+                    status_ref.set_text(&format!(
+                        "Selected {}. Sync-eligible: {}. Local-only excluded: {}. Redactions applied: {}.",
+                        selected_pairs.len(),
+                        payload.conversations.len(),
+                        payload.skipped_local_only,
+                        payload.redactions
+                    ));
+                }
+                Err(err) => {
+                    status_ref.set_text(&format!("Failed to build sync payload: {err}"));
+                }
+            }
         });
 
         let window_ref = window.clone();
@@ -266,6 +280,8 @@ fn render_rows(
         list_box.append(&row);
 
         row_state.borrow_mut().push(SessionRowState {
+            category: session.category.clone(),
+            session_id: session.session_id.clone(),
             include_toggle,
             local_only_toggle,
         });

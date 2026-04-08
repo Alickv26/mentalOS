@@ -175,34 +175,20 @@ impl MemoryBrowser {
                     let Some(session) = active_ref.borrow().clone() else {
                         return;
                     };
-                    match manager_ref.delete_session(
-                        &session.workspace,
-                        &session.category,
-                        &session.session_id,
-                    ) {
-                        Ok(true) => {
-                            if let Ok(updated) = manager_ref.list_sessions(&workspace_ref) {
-                                *sessions_ref.borrow_mut() = updated;
-                            }
-                            refresh_browser_state(
-                                &list_ref,
-                                &summary_ref,
-                                &resume_ref,
-                                &delete_ref,
-                                &sessions_ref,
-                                &manager_ref,
-                                &on_select_ref,
-                                &window_ref,
-                                &workspace_ref,
-                                &active_ref,
-                                &search_ref.text(),
-                            );
-                        }
-                        Ok(false) => {}
-                        Err(err) => {
-                            log::warn!("Failed to delete session {}: {}", session.session_id, err);
-                        }
-                    }
+                    delete_session_and_refresh(
+                        &session,
+                        &list_ref,
+                        &summary_ref,
+                        &resume_ref,
+                        &delete_ref,
+                        &sessions_ref,
+                        &manager_ref,
+                        &on_select_ref,
+                        &window_ref,
+                        &workspace_ref,
+                        &active_ref,
+                        &search_ref.text(),
+                    );
                 });
             }
             Ok(_) => {
@@ -318,11 +304,11 @@ fn refresh_browser_state(
     active_session: &Rc<RefCell<Option<SessionSummary>>>,
     query: &str,
 ) {
-    let sessions_ref = sessions.borrow();
-    let active_session_id = detect_active_session_id(workspace, &sessions_ref, manager);
+    let sessions_snapshot = sessions.borrow().clone();
+    let active_session_id = detect_active_session_id(workspace, &sessions_snapshot, manager);
     let active_summary = active_session_id
         .as_deref()
-        .and_then(|session_id| find_session(&sessions_ref, session_id));
+        .and_then(|session_id| find_session(&sessions_snapshot, session_id));
 
     if let Some(session) = active_summary.clone() {
         let label = session.title.as_deref().unwrap_or(&session.session_id);
@@ -340,10 +326,15 @@ fn refresh_browser_state(
     populate_sessions(
         list_box,
         summary,
-        &sessions_ref,
+        &sessions_snapshot,
+        sessions,
         manager,
         on_select,
         window,
+        resume_btn,
+        delete_btn,
+        workspace,
+        active_session,
         query,
         active_session_id.as_deref(),
     );
@@ -398,9 +389,14 @@ fn populate_sessions(
     list_box: &Box,
     summary: &Label,
     sessions: &[SessionSummary],
+    sessions_store: &Rc<RefCell<Vec<SessionSummary>>>,
     manager: &Rc<MemoryManager>,
     on_select: &Rc<dyn Fn(Conversation, SessionSummary)>,
     window: &Window,
+    resume_btn: &Button,
+    delete_btn: &Button,
+    workspace: &str,
+    active_session: &Rc<RefCell<Option<SessionSummary>>>,
     query: &str,
     active_session_id: Option<&str>,
 ) {
@@ -423,7 +419,8 @@ fn populate_sessions(
 
         let btn = Button::new();
         btn.add_css_class("launcher-item");
-        let row = Box::new(Orientation::Vertical, 2);
+        let row = Box::new(Orientation::Horizontal, 8);
+        let content = Box::new(Orientation::Vertical, 2);
 
         if active_session_id == Some(session.session_id.as_str()) {
             btn.add_css_class("active-memory-session");
@@ -437,7 +434,7 @@ fn populate_sessions(
         head.set_halign(gtk4::Align::Start);
         head.set_wrap(true);
         head.add_css_class("message-content");
-        row.append(&head);
+        content.append(&head);
 
         let active_suffix = if active_session_id == Some(session.session_id.as_str()) {
             "   active"
@@ -453,7 +450,16 @@ fn populate_sessions(
         let meta = Label::new(Some(&(details + active_suffix)));
         meta.set_halign(gtk4::Align::Start);
         meta.add_css_class("app-bar-stats");
-        row.append(&meta);
+        content.append(&meta);
+        content.set_hexpand(true);
+
+        let row_delete_btn = Button::with_label("Delete");
+        row_delete_btn.add_css_class("icon-button");
+        row_delete_btn.set_halign(gtk4::Align::End);
+        row_delete_btn.set_valign(gtk4::Align::Start);
+
+        row.append(&content);
+        row.append(&row_delete_btn);
 
         btn.set_child(Some(&row));
         let session_clone = (*session).clone();
@@ -466,6 +472,35 @@ fn populate_sessions(
                 on_select_ref.clone(),
                 &window_ref,
                 &session_clone,
+            );
+        });
+
+        let session_for_delete = (*session).clone();
+        let list_ref = list_box.clone();
+        let summary_ref = summary.clone();
+        let resume_ref = resume_btn.clone();
+        let delete_ref = delete_btn.clone();
+        let sessions_ref = sessions_store.clone();
+        let manager_ref = manager.clone();
+        let on_select_ref = on_select.clone();
+        let window_ref = window.clone();
+        let workspace_ref = workspace.to_string();
+        let active_ref = active_session.clone();
+        let query_ref = query.to_string();
+        row_delete_btn.connect_clicked(move |_| {
+            delete_session_and_refresh(
+                &session_for_delete,
+                &list_ref,
+                &summary_ref,
+                &resume_ref,
+                &delete_ref,
+                &sessions_ref,
+                &manager_ref,
+                &on_select_ref,
+                &window_ref,
+                &workspace_ref,
+                &active_ref,
+                &query_ref,
             );
         });
 
@@ -484,6 +519,47 @@ fn populate_sessions(
         empty.add_css_class("welcome-hint");
         empty.set_halign(gtk4::Align::Start);
         list_box.append(&empty);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn delete_session_and_refresh(
+    session: &SessionSummary,
+    list_box: &Box,
+    summary: &Label,
+    resume_btn: &Button,
+    delete_btn: &Button,
+    sessions: &Rc<RefCell<Vec<SessionSummary>>>,
+    manager: &Rc<MemoryManager>,
+    on_select: &Rc<dyn Fn(Conversation, SessionSummary)>,
+    window: &Window,
+    workspace: &str,
+    active_session: &Rc<RefCell<Option<SessionSummary>>>,
+    query: &str,
+) {
+    match manager.delete_session(&session.workspace, &session.category, &session.session_id) {
+        Ok(true) => {
+            if let Ok(updated) = manager.list_sessions(workspace) {
+                *sessions.borrow_mut() = updated;
+            }
+            refresh_browser_state(
+                list_box,
+                summary,
+                resume_btn,
+                delete_btn,
+                sessions,
+                manager,
+                on_select,
+                window,
+                workspace,
+                active_session,
+                query,
+            );
+        }
+        Ok(false) => {}
+        Err(err) => {
+            log::warn!("Failed to delete session {}: {}", session.session_id, err);
+        }
     }
 }
 

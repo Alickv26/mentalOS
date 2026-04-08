@@ -255,6 +255,31 @@ impl MemoryManager {
         Ok(read_active_session_id(&dir))
     }
 
+    pub fn delete_session(
+        &self,
+        workspace: &str,
+        category: &str,
+        session_id: &str,
+    ) -> Result<bool> {
+        let dir = self.category_dir(workspace, &normalize_category(category));
+        if !dir.exists() {
+            return Ok(false);
+        }
+
+        let Some(file) = find_session_file(&dir, session_id)? else {
+            return Ok(false);
+        };
+
+        fs::remove_file(file)?;
+        if let Some(active) = read_active_session_id(&dir) {
+            if active == session_id {
+                let marker = active_session_marker(&dir);
+                let _ = fs::remove_file(marker);
+            }
+        }
+        Ok(true)
+    }
+
     fn category_dir(&self, workspace: &str, category: &str) -> PathBuf {
         self.workspace_dir
             .join(workspace)
@@ -610,5 +635,30 @@ mod tests {
             .unwrap();
         let active = manager.active_session_id("demo", "general").unwrap();
         assert_eq!(active, Some("session-42".to_string()));
+    }
+
+    #[test]
+    fn delete_session_removes_file_and_clears_active_marker() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+        manager
+            .append_message("demo", "general", Role::User, "hello")
+            .unwrap();
+        let session = manager
+            .list_sessions("demo")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        manager
+            .set_active_session("demo", "general", &session.session_id)
+            .unwrap();
+
+        let deleted = manager
+            .delete_session("demo", "general", &session.session_id)
+            .unwrap();
+        assert!(deleted);
+        assert_eq!(manager.list_sessions("demo").unwrap().len(), 0);
+        assert_eq!(manager.active_session_id("demo", "general").unwrap(), None);
     }
 }

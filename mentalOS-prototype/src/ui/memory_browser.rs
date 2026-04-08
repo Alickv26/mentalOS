@@ -43,18 +43,26 @@ impl MemoryBrowser {
         summary.add_css_class("app-bar-stats");
         root.append(&summary);
 
+        let controls = Box::new(Orientation::Horizontal, 8);
         let resume_btn = Button::with_label("Resume current");
         resume_btn.add_css_class("icon-button");
         resume_btn.set_halign(gtk4::Align::Start);
         resume_btn.set_visible(false);
-        root.append(&resume_btn);
+        controls.append(&resume_btn);
+
+        let delete_btn = Button::with_label("Delete current");
+        delete_btn.add_css_class("icon-button");
+        delete_btn.set_halign(gtk4::Align::Start);
+        delete_btn.set_visible(false);
+        controls.append(&delete_btn);
+        root.append(&controls);
 
         let list_box = Box::new(Orientation::Vertical, 6);
 
         let manager = MemoryManager::new(default_workspace_root());
         match manager.list_sessions(workspace) {
             Ok(sessions) if !sessions.is_empty() => {
-                let sessions = Rc::new(sessions);
+                let sessions = Rc::new(RefCell::new(sessions));
                 let manager = Rc::new(manager);
                 let on_select: Rc<dyn Fn(Conversation, SessionSummary)> = Rc::new(on_select);
                 let workspace_name = workspace.to_string();
@@ -64,6 +72,7 @@ impl MemoryBrowser {
                     &list_box,
                     &summary,
                     &resume_btn,
+                    &delete_btn,
                     &sessions,
                     &manager,
                     &on_select,
@@ -86,6 +95,7 @@ impl MemoryBrowser {
                 let list_ref = list_box.clone();
                 let summary_ref = summary.clone();
                 let resume_ref = resume_btn.clone();
+                let delete_ref = delete_btn.clone();
                 let sessions_ref = sessions.clone();
                 let manager_ref = manager.clone();
                 let on_select_ref = on_select.clone();
@@ -98,6 +108,7 @@ impl MemoryBrowser {
                         &list_ref,
                         &summary_ref,
                         &resume_ref,
+                        &delete_ref,
                         &sessions_ref,
                         &manager_ref,
                         &on_select_ref,
@@ -122,6 +133,7 @@ impl MemoryBrowser {
                 let list_ref = list_box.clone();
                 let summary_ref = summary.clone();
                 let resume_ref = resume_btn.clone();
+                let delete_ref = delete_btn.clone();
                 let sessions_ref = sessions.clone();
                 let manager_ref = manager.clone();
                 let on_select_ref = on_select.clone();
@@ -136,6 +148,7 @@ impl MemoryBrowser {
                         &list_ref,
                         &summary_ref,
                         &resume_ref,
+                        &delete_ref,
                         &sessions_ref,
                         &manager_ref,
                         &on_select_ref,
@@ -145,6 +158,51 @@ impl MemoryBrowser {
                         &search_ref.text(),
                     );
                     glib::ControlFlow::Continue
+                });
+
+                let search_ref = search.clone();
+                let list_ref = list_box.clone();
+                let summary_ref = summary.clone();
+                let resume_ref = resume_btn.clone();
+                let delete_ref = delete_btn.clone();
+                let sessions_ref = sessions.clone();
+                let manager_ref = manager.clone();
+                let on_select_ref = on_select.clone();
+                let window_ref = window.clone();
+                let workspace_ref = workspace_name.clone();
+                let active_ref = active_session.clone();
+                delete_btn.connect_clicked(move |_| {
+                    let Some(session) = active_ref.borrow().clone() else {
+                        return;
+                    };
+                    match manager_ref.delete_session(
+                        &session.workspace,
+                        &session.category,
+                        &session.session_id,
+                    ) {
+                        Ok(true) => {
+                            if let Ok(updated) = manager_ref.list_sessions(&workspace_ref) {
+                                *sessions_ref.borrow_mut() = updated;
+                            }
+                            refresh_browser_state(
+                                &list_ref,
+                                &summary_ref,
+                                &resume_ref,
+                                &delete_ref,
+                                &sessions_ref,
+                                &manager_ref,
+                                &on_select_ref,
+                                &window_ref,
+                                &workspace_ref,
+                                &active_ref,
+                                &search_ref.text(),
+                            );
+                        }
+                        Ok(false) => {}
+                        Err(err) => {
+                            log::warn!("Failed to delete session {}: {}", session.session_id, err);
+                        }
+                    }
                 });
             }
             Ok(_) => {
@@ -230,7 +288,8 @@ fn refresh_browser_state(
     list_box: &Box,
     summary: &Label,
     resume_btn: &Button,
-    sessions: &[SessionSummary],
+    delete_btn: &Button,
+    sessions: &Rc<RefCell<Vec<SessionSummary>>>,
     manager: &Rc<MemoryManager>,
     on_select: &Rc<dyn Fn(Conversation, SessionSummary)>,
     window: &Window,
@@ -238,25 +297,29 @@ fn refresh_browser_state(
     active_session: &Rc<RefCell<Option<SessionSummary>>>,
     query: &str,
 ) {
-    let active_session_id = detect_active_session_id(workspace, sessions, manager);
+    let sessions_ref = sessions.borrow();
+    let active_session_id = detect_active_session_id(workspace, &sessions_ref, manager);
     let active_summary = active_session_id
         .as_deref()
-        .and_then(|session_id| find_session(sessions, session_id));
+        .and_then(|session_id| find_session(&sessions_ref, session_id));
 
     if let Some(session) = active_summary.clone() {
         let label = session.title.as_deref().unwrap_or(&session.session_id);
         resume_btn.set_label(&format!("Resume current: {label}"));
         resume_btn.set_visible(true);
+        delete_btn.set_label(&format!("Delete current: {}", session.session_id));
+        delete_btn.set_visible(true);
         *active_session.borrow_mut() = Some(session);
     } else {
         resume_btn.set_visible(false);
+        delete_btn.set_visible(false);
         *active_session.borrow_mut() = None;
     }
 
     populate_sessions(
         list_box,
         summary,
-        sessions,
+        &sessions_ref,
         manager,
         on_select,
         window,

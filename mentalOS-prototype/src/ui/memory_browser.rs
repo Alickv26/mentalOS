@@ -8,6 +8,21 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct MemoryBrowser;
+type SessionSelectCallback = dyn Fn(Conversation, SessionSummary);
+
+#[derive(Clone)]
+struct BrowserContext {
+    list_box: Box,
+    summary: Label,
+    resume_btn: Button,
+    delete_btn: Button,
+    sessions: Rc<RefCell<Vec<SessionSummary>>>,
+    manager: Rc<MemoryManager>,
+    on_select: Rc<SessionSelectCallback>,
+    window: Window,
+    workspace: String,
+    active_session: Rc<RefCell<Option<SessionSummary>>>,
+}
 
 impl MemoryBrowser {
     pub fn show<F>(parent: &impl IsA<gtk4::Window>, workspace: &str, on_select: F)
@@ -86,131 +101,69 @@ impl MemoryBrowser {
             Ok(sessions) if !sessions.is_empty() => {
                 let sessions = Rc::new(RefCell::new(sessions));
                 let manager = Rc::new(manager);
-                let on_select: Rc<dyn Fn(Conversation, SessionSummary)> = Rc::new(on_select);
-                let workspace_name = workspace.to_string();
-                let active_session = Rc::new(RefCell::new(None::<SessionSummary>));
+                let on_select: Rc<SessionSelectCallback> = Rc::new(on_select);
+                let ctx = Rc::new(BrowserContext {
+                    list_box: list_box.clone(),
+                    summary: summary.clone(),
+                    resume_btn: resume_btn.clone(),
+                    delete_btn: delete_btn.clone(),
+                    sessions: sessions.clone(),
+                    manager: manager.clone(),
+                    on_select: on_select.clone(),
+                    window: window.clone(),
+                    workspace: workspace.to_string(),
+                    active_session: Rc::new(RefCell::new(None::<SessionSummary>)),
+                });
 
-                refresh_browser_state(
-                    &list_box,
-                    &summary,
-                    &resume_btn,
-                    &delete_btn,
-                    &sessions,
-                    &manager,
-                    &on_select,
-                    &window,
-                    &workspace_name,
-                    &active_session,
-                    "",
-                );
+                refresh_browser_state(&ctx, "");
 
-                let manager_ref = manager.clone();
-                let on_select_ref = on_select.clone();
-                let window_ref = window.clone();
-                let active_ref = active_session.clone();
+                let ctx_ref = ctx.clone();
                 resume_btn.connect_clicked(move |_| {
-                    if let Some(session) = active_ref.borrow().clone() {
-                        open_session(&manager_ref, on_select_ref.clone(), &window_ref, &session);
+                    if let Some(session) = ctx_ref.active_session.borrow().clone() {
+                        open_session(
+                            &ctx_ref.manager,
+                            ctx_ref.on_select.clone(),
+                            &ctx_ref.window,
+                            &session,
+                        );
                     }
                 });
 
-                let list_ref = list_box.clone();
-                let summary_ref = summary.clone();
-                let resume_ref = resume_btn.clone();
-                let delete_ref = delete_btn.clone();
-                let sessions_ref = sessions.clone();
-                let manager_ref = manager.clone();
-                let on_select_ref = on_select.clone();
-                let window_ref = window.clone();
-                let workspace_ref = workspace_name.clone();
-                let active_ref = active_session.clone();
+                let ctx_ref = ctx.clone();
                 search.connect_changed(move |entry| {
                     let query = entry.text().to_string();
-                    refresh_browser_state(
-                        &list_ref,
-                        &summary_ref,
-                        &resume_ref,
-                        &delete_ref,
-                        &sessions_ref,
-                        &manager_ref,
-                        &on_select_ref,
-                        &window_ref,
-                        &workspace_ref,
-                        &active_ref,
-                        &query,
-                    );
+                    refresh_browser_state(&ctx_ref, &query);
                 });
 
-                let manager_ref = manager.clone();
-                let on_select_ref = on_select.clone();
-                let window_ref = window.clone();
-                let active_ref = active_session.clone();
+                let ctx_ref = ctx.clone();
                 search.connect_activate(move |_| {
-                    if let Some(session) = active_ref.borrow().clone() {
-                        open_session(&manager_ref, on_select_ref.clone(), &window_ref, &session);
+                    if let Some(session) = ctx_ref.active_session.borrow().clone() {
+                        open_session(
+                            &ctx_ref.manager,
+                            ctx_ref.on_select.clone(),
+                            &ctx_ref.window,
+                            &session,
+                        );
                     }
                 });
 
                 let search_ref = search.clone();
-                let list_ref = list_box.clone();
-                let summary_ref = summary.clone();
-                let resume_ref = resume_btn.clone();
-                let delete_ref = delete_btn.clone();
-                let sessions_ref = sessions.clone();
-                let manager_ref = manager.clone();
-                let on_select_ref = on_select.clone();
-                let window_ref = window.clone();
-                let workspace_ref = workspace_name.clone();
-                let active_ref = active_session.clone();
+                let ctx_ref = ctx.clone();
                 glib::timeout_add_seconds_local(1, move || {
-                    if !window_ref.is_visible() {
+                    if !ctx_ref.window.is_visible() {
                         return glib::ControlFlow::Break;
                     }
-                    refresh_browser_state(
-                        &list_ref,
-                        &summary_ref,
-                        &resume_ref,
-                        &delete_ref,
-                        &sessions_ref,
-                        &manager_ref,
-                        &on_select_ref,
-                        &window_ref,
-                        &workspace_ref,
-                        &active_ref,
-                        &search_ref.text(),
-                    );
+                    refresh_browser_state(&ctx_ref, &search_ref.text());
                     glib::ControlFlow::Continue
                 });
 
                 let search_ref = search.clone();
-                let list_ref = list_box.clone();
-                let summary_ref = summary.clone();
-                let resume_ref = resume_btn.clone();
-                let delete_ref = delete_btn.clone();
-                let sessions_ref = sessions.clone();
-                let manager_ref = manager.clone();
-                let on_select_ref = on_select.clone();
-                let window_ref = window.clone();
-                let workspace_ref = workspace_name.clone();
-                let active_ref = active_session.clone();
+                let ctx_ref = ctx.clone();
                 delete_btn.connect_clicked(move |_| {
-                    let Some(session) = active_ref.borrow().clone() else {
+                    let Some(session) = ctx_ref.active_session.borrow().clone() else {
                         return;
                     };
-                    delete_session_and_refresh(
-                        &session,
-                        &list_ref,
-                        &summary_ref,
-                        &resume_ref,
-                        &delete_ref,
-                        &sessions_ref,
-                        &manager_ref,
-                        &on_select_ref,
-                        &window_ref,
-                        &workspace_ref,
-                        &active_ref,
-                        &search_ref.text(),
-                    );
+                    delete_session_and_refresh(&session, &ctx_ref, &search_ref.text());
                 });
             }
             Ok(_) => {
@@ -314,53 +267,30 @@ fn find_session(sessions: &[SessionSummary], session_id: &str) -> Option<Session
         .cloned()
 }
 
-fn refresh_browser_state(
-    list_box: &Box,
-    summary: &Label,
-    resume_btn: &Button,
-    delete_btn: &Button,
-    sessions: &Rc<RefCell<Vec<SessionSummary>>>,
-    manager: &Rc<MemoryManager>,
-    on_select: &Rc<dyn Fn(Conversation, SessionSummary)>,
-    window: &Window,
-    workspace: &str,
-    active_session: &Rc<RefCell<Option<SessionSummary>>>,
-    query: &str,
-) {
-    let sessions_snapshot = sessions.borrow().clone();
-    let active_session_id = detect_active_session_id(workspace, &sessions_snapshot, manager);
+fn refresh_browser_state(ctx: &BrowserContext, query: &str) {
+    let sessions_snapshot = ctx.sessions.borrow().clone();
+    let active_session_id =
+        detect_active_session_id(&ctx.workspace, &sessions_snapshot, &ctx.manager);
     let active_summary = active_session_id
         .as_deref()
         .and_then(|session_id| find_session(&sessions_snapshot, session_id));
 
     if let Some(session) = active_summary.clone() {
         let label = session.title.as_deref().unwrap_or(&session.session_id);
-        resume_btn.set_label(&format!("Resume current: {label}"));
-        resume_btn.set_visible(true);
-        delete_btn.set_label(&format!("Delete current: {}", session.session_id));
-        delete_btn.set_visible(true);
-        *active_session.borrow_mut() = Some(session);
+        ctx.resume_btn
+            .set_label(&format!("Resume current: {label}"));
+        ctx.resume_btn.set_visible(true);
+        ctx.delete_btn
+            .set_label(&format!("Delete current: {}", session.session_id));
+        ctx.delete_btn.set_visible(true);
+        *ctx.active_session.borrow_mut() = Some(session);
     } else {
-        resume_btn.set_visible(false);
-        delete_btn.set_visible(false);
-        *active_session.borrow_mut() = None;
+        ctx.resume_btn.set_visible(false);
+        ctx.delete_btn.set_visible(false);
+        *ctx.active_session.borrow_mut() = None;
     }
 
-    populate_sessions(
-        list_box,
-        summary,
-        &sessions_snapshot,
-        sessions,
-        manager,
-        on_select,
-        window,
-        resume_btn,
-        delete_btn,
-        workspace,
-        active_session,
-        query,
-        active_session_id.as_deref(),
-    );
+    populate_sessions(ctx, &sessions_snapshot, query, active_session_id.as_deref());
 }
 
 fn ordered_sessions<'a>(
@@ -408,22 +338,13 @@ fn open_session(
 }
 
 fn populate_sessions(
-    list_box: &Box,
-    summary: &Label,
+    ctx: &BrowserContext,
     sessions: &[SessionSummary],
-    sessions_store: &Rc<RefCell<Vec<SessionSummary>>>,
-    manager: &Rc<MemoryManager>,
-    on_select: &Rc<dyn Fn(Conversation, SessionSummary)>,
-    window: &Window,
-    resume_btn: &Button,
-    delete_btn: &Button,
-    workspace: &str,
-    active_session: &Rc<RefCell<Option<SessionSummary>>>,
     query: &str,
     active_session_id: Option<&str>,
 ) {
-    while let Some(child) = list_box.first_child() {
-        list_box.remove(&child);
+    while let Some(child) = ctx.list_box.first_child() {
+        ctx.list_box.remove(&child);
     }
 
     let query_lower = query.to_lowercase();
@@ -431,7 +352,7 @@ fn populate_sessions(
     let mut shown = 0usize;
 
     for session in filtered_sessions.iter() {
-        if !matches_session_query_with_content(manager, session, &query_lower) {
+        if !matches_session_query_with_content(&ctx.manager, session, &query_lower) {
             continue;
         }
         if shown >= 30 {
@@ -485,9 +406,9 @@ fn populate_sessions(
 
         btn.set_child(Some(&row));
         let session_clone = (*session).clone();
-        let manager_ref = Rc::clone(manager);
-        let window_ref = window.clone();
-        let on_select_ref = Rc::clone(on_select);
+        let manager_ref = Rc::clone(&ctx.manager);
+        let window_ref = ctx.window.clone();
+        let on_select_ref = Rc::clone(&ctx.on_select);
         btn.connect_clicked(move |_| {
             open_session(
                 &manager_ref,
@@ -498,40 +419,19 @@ fn populate_sessions(
         });
 
         let session_for_delete = (*session).clone();
-        let list_ref = list_box.clone();
-        let summary_ref = summary.clone();
-        let resume_ref = resume_btn.clone();
-        let delete_ref = delete_btn.clone();
-        let sessions_ref = sessions_store.clone();
-        let manager_ref = manager.clone();
-        let on_select_ref = on_select.clone();
-        let window_ref = window.clone();
-        let workspace_ref = workspace.to_string();
-        let active_ref = active_session.clone();
+        let ctx_ref = ctx.clone();
         let query_ref = query.to_string();
         row_delete_btn.connect_clicked(move |_| {
-            delete_session_and_refresh(
-                &session_for_delete,
-                &list_ref,
-                &summary_ref,
-                &resume_ref,
-                &delete_ref,
-                &sessions_ref,
-                &manager_ref,
-                &on_select_ref,
-                &window_ref,
-                &workspace_ref,
-                &active_ref,
-                &query_ref,
-            );
+            delete_session_and_refresh(&session_for_delete, &ctx_ref, &query_ref);
         });
 
-        list_box.append(&btn);
+        ctx.list_box.append(&btn);
     }
 
-    summary.set_text(&format_filtered_summary(shown, sessions.len()));
+    ctx.summary
+        .set_text(&format_filtered_summary(shown, sessions.len()));
 
-    if list_box.first_child().is_none() {
+    if ctx.list_box.first_child().is_none() {
         let message = if query.trim().is_empty() {
             "No conversations saved yet.".to_string()
         } else {
@@ -540,43 +440,20 @@ fn populate_sessions(
         let empty = Label::new(Some(&message));
         empty.add_css_class("welcome-hint");
         empty.set_halign(gtk4::Align::Start);
-        list_box.append(&empty);
+        ctx.list_box.append(&empty);
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn delete_session_and_refresh(
-    session: &SessionSummary,
-    list_box: &Box,
-    summary: &Label,
-    resume_btn: &Button,
-    delete_btn: &Button,
-    sessions: &Rc<RefCell<Vec<SessionSummary>>>,
-    manager: &Rc<MemoryManager>,
-    on_select: &Rc<dyn Fn(Conversation, SessionSummary)>,
-    window: &Window,
-    workspace: &str,
-    active_session: &Rc<RefCell<Option<SessionSummary>>>,
-    query: &str,
-) {
-    match manager.delete_session(&session.workspace, &session.category, &session.session_id) {
+fn delete_session_and_refresh(session: &SessionSummary, ctx: &BrowserContext, query: &str) {
+    match ctx
+        .manager
+        .delete_session(&session.workspace, &session.category, &session.session_id)
+    {
         Ok(true) => {
-            if let Ok(updated) = manager.list_sessions(workspace) {
-                *sessions.borrow_mut() = updated;
+            if let Ok(updated) = ctx.manager.list_sessions(&ctx.workspace) {
+                *ctx.sessions.borrow_mut() = updated;
             }
-            refresh_browser_state(
-                list_box,
-                summary,
-                resume_btn,
-                delete_btn,
-                sessions,
-                manager,
-                on_select,
-                window,
-                workspace,
-                active_session,
-                query,
-            );
+            refresh_browser_state(ctx, query);
         }
         Ok(false) => {}
         Err(err) => {

@@ -17,6 +17,12 @@ struct SessionRowState {
     local_only_toggle: CheckButton,
 }
 
+#[derive(Clone, Copy)]
+struct DateFilters<'a> {
+    from_date: &'a str,
+    to_date: &'a str,
+}
+
 impl SyncSelectionDialog {
     pub fn show(parent: &impl IsA<gtk4::Window>, workspace: &str) {
         let window = Window::builder()
@@ -100,6 +106,8 @@ impl SyncSelectionDialog {
         let row_state = Rc::new(RefCell::new(Vec::<SessionRowState>::new()));
         let workspace_name = workspace.to_string();
 
+        let initial_from = from_entry.text().to_string();
+        let initial_to = to_entry.text().to_string();
         render_rows(
             &list_box,
             &status,
@@ -107,8 +115,10 @@ impl SyncSelectionDialog {
             &manager,
             &workspace_name,
             &row_state,
-            &from_entry.text(),
-            &to_entry.text(),
+            DateFilters {
+                from_date: &initial_from,
+                to_date: &initial_to,
+            },
         );
 
         let list_ref = list_box.clone();
@@ -119,6 +129,8 @@ impl SyncSelectionDialog {
         let rows_ref = row_state.clone();
         let to_ref = to_entry.clone();
         from_entry.connect_changed(move |entry| {
+            let from_text = entry.text().to_string();
+            let to_text = to_ref.text().to_string();
             render_rows(
                 &list_ref,
                 &status_ref,
@@ -126,8 +138,10 @@ impl SyncSelectionDialog {
                 &manager_ref,
                 &workspace_ref,
                 &rows_ref,
-                &entry.text(),
-                &to_ref.text(),
+                DateFilters {
+                    from_date: &from_text,
+                    to_date: &to_text,
+                },
             );
         });
 
@@ -139,6 +153,8 @@ impl SyncSelectionDialog {
         let rows_ref = row_state.clone();
         let from_ref = from_entry.clone();
         to_entry.connect_changed(move |entry| {
+            let from_text = from_ref.text().to_string();
+            let to_text = entry.text().to_string();
             render_rows(
                 &list_ref,
                 &status_ref,
@@ -146,8 +162,10 @@ impl SyncSelectionDialog {
                 &manager_ref,
                 &workspace_ref,
                 &rows_ref,
-                &from_ref.text(),
-                &entry.text(),
+                DateFilters {
+                    from_date: &from_text,
+                    to_date: &to_text,
+                },
             );
         });
 
@@ -221,16 +239,15 @@ fn render_rows(
     manager: &Rc<MemoryManager>,
     workspace: &str,
     row_state: &Rc<RefCell<Vec<SessionRowState>>>,
-    from_date: &str,
-    to_date: &str,
+    filters: DateFilters<'_>,
 ) {
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
     row_state.borrow_mut().clear();
 
-    let from_filter = parse_date_filter(from_date);
-    let to_filter = parse_date_filter(to_date);
+    let from_filter = parse_date_filter(filters.from_date);
+    let to_filter = parse_date_filter(filters.to_date);
     let mut rendered = 0usize;
 
     for session in sessions {

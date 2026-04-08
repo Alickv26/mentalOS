@@ -3,6 +3,7 @@ use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, Box, Orientation};
 use log::{error, info, warn};
 use std::cell::{Cell, RefCell};
+use std::path::Path;
 use std::rc::Rc;
 use tokio::sync::mpsc::Sender;
 
@@ -278,7 +279,7 @@ impl MainWindow {
                     }
                     BackendResponse::ProjectCreated {
                         success,
-                        path: _,
+                        path,
                         message,
                     } => {
                         let text = if success {
@@ -287,6 +288,28 @@ impl MainWindow {
                             format!("Project creation failed: {}", message)
                         };
                         chat_ref.append_message(MessageRole::System, &text);
+                        if success {
+                            if let Some(project_path) = path {
+                                let manager = MemoryManager::new(default_workspace_root());
+                                match manager.find_related_session_for_project(
+                                    "default",
+                                    Path::new(&project_path),
+                                ) {
+                                    Ok(Some(session)) => {
+                                        let label =
+                                            session.title.as_deref().unwrap_or(&session.session_id);
+                                        app_bar_ref.set_current_session(label);
+                                        notifications_ref.show(&format!(
+                                            "Linked project to conversation: {label}"
+                                        ));
+                                    }
+                                    Ok(None) => {}
+                                    Err(err) => {
+                                        warn!("Failed to resolve related session: {}", err);
+                                    }
+                                }
+                            }
+                        }
                         set_visual_state(&root_ref, &pill_ref, AiState::Sleep);
                         app_bar_ref.set_status("Idle");
                         app_bar_ref.set_busy(false);

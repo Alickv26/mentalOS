@@ -1,16 +1,17 @@
 use crate::error::{MentalOSError, Result};
-use crate::memory::{MemoryManager, MessageAction, Role};
+use crate::memory::{MemoryManager, Message, MessageAction, Role};
 use crate::openclaw::OpenClawClient;
 use crate::project_handler::ProjectHandler;
 use crate::task_tracker::TaskTracker;
 use crate::whitelist::{WhitelistDecision, WhitelistManager};
 use crate::workspace::WorkspaceManager;
+use chrono::Utc;
 use log::{info, warn};
 use regex::Regex;
 use serde::Deserialize;
 use shell_words::split;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -393,13 +394,19 @@ impl<E: CommandExecutor> CommandRouter<E> {
             return Ok(response);
         }
 
-        let context = {
+        let mut context = {
             let memory = self
                 .memory
                 .lock()
                 .map_err(|_| MentalOSError::Other("Memory lock poisoned".into()))?;
             memory.load_recent(workspace, category, context_limit)?
         };
+        let workspace_path = self.resolve_workspace_path(workspace)?;
+        if let Some(smart_context) =
+            build_smart_context_message(&context, workspace_path.as_deref(), input)
+        {
+            context.push(smart_context);
+        }
 
         let ai_text = self.openclaw.send_message(input, &context).await?;
         let ai_response = parse_ai_response(&ai_text);
@@ -433,11 +440,27 @@ impl<E: CommandExecutor> CommandRouter<E> {
                 .memory
                 .lock()
                 .map_err(|_| MentalOSError::Other("Memory lock poisoned".into()))?;
-            memory.append_message(
+            let mut actions = Vec::new();
+            for output in &outputs {
+                actions.push(MessageAction {
+                    action_type: "run_command".to_string(),
+                    path: None,
+                    command: Some(output.command.clone()),
+                });
+            }
+            for command in &approvals_required {
+                actions.push(MessageAction {
+                    action_type: "approval_required".to_string(),
+                    path: None,
+                    command: Some(command.clone()),
+                });
+            }
+            memory.append_message_with_actions(
                 workspace,
                 category,
                 Role::Assistant,
                 ai_response.message.clone(),
+                actions,
             )?;
         }
 
@@ -552,7 +575,23 @@ impl<E: CommandExecutor> CommandRouter<E> {
                 .memory
                 .lock()
                 .map_err(|_| MentalOSError::Other("Memory lock poisoned".into()))?;
-            memory.append_message(workspace, category, Role::Assistant, message.clone())?;
+            let action_type = if outputs.is_empty() {
+                "project_command_requested"
+            } else {
+                "project_command_executed"
+            };
+            let actions = vec![MessageAction {
+                action_type: action_type.to_string(),
+                path: Some(workspace_path.display().to_string()),
+                command: Some(project_command),
+            }];
+            memory.append_message_with_actions(
+                workspace,
+                category,
+                Role::Assistant,
+                message.clone(),
+                actions,
+            )?;
         }
 
         Ok(RouterResponse {
@@ -735,6 +774,169 @@ fn detect_project_command_intent(input: &str) -> Option<&'static str> {
     None
 }
 
+fn build_smart_context_message(
+    context: &[Message],
+    workspace_path: Option<&Path>,
+    input: &str,
+) -> Option<Message> {
+    let cwd = workspace_path
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "<unknown>".to_string());
+    let open_files = workspace_path.map(list_open_files).unwrap_or_default();
+    let recent_commands = extract_recent_commands(context, 5);
+    let summary = summarize_recent_conversation(context, 3);
+    let goals = extract_user_goals(context, input, 4);
+
+    let mut lines = Vec::new();
+    lines.push("Runtime context snapshot:".to_string());
+    lines.push(format!("- current_working_directory: {cwd}"));
+    lines.push(format!(
+        "- open_files: {}",
+        if open_files.is_empty() {
+            "<none>".to_string()
+        } else {
+            open_files.join(", ")
+        }
+    ));
+    lines.push(format!(
+        "- recent_commands: {}",
+        if recent_commands.is_empty() {
+            "<none>".to_string()
+        } else {
+            recent_commands.join(" | ")
+        }
+    ));
+    lines.push(format!(
+        "- previous_summary: {}",
+        if summary.is_empty() {
+            "<none>".to_string()
+        } else {
+            summary
+        }
+    ));
+    lines.push(format!(
+        "- inferred_goals: {}",
+        if goals.is_empty() {
+            "<none>".to_string()
+        } else {
+            goals.join(" | ")
+        }
+    ));
+
+    Some(Message {
+        role: Role::System,
+        content: lines.join("\n"),
+        timestamp: Utc::now(),
+        actions: Vec::new(),
+    })
+}
+
+fn list_open_files(workspace_path: &Path) -> Vec<String> {
+    if !workspace_path.exists() {
+        return Vec::new();
+    }
+    let mut files = Vec::new();
+    let entries = match std::fs::read_dir(workspace_path) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            files.push(
+                path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.display().to_string()),
+            );
+        }
+        if files.len() >= 8 {
+            break;
+        }
+    }
+    files
+}
+
+fn extract_recent_commands(context: &[Message], limit: usize) -> Vec<String> {
+    let mut commands = Vec::new();
+    for message in context.iter().rev() {
+        for action in &message.actions {
+            if let Some(command) = &action.command {
+                if !commands.contains(command) {
+                    commands.push(command.clone());
+                }
+            }
+            if commands.len() >= limit {
+                break;
+            }
+        }
+        if commands.len() >= limit {
+            break;
+        }
+    }
+    commands.reverse();
+    commands
+}
+
+fn summarize_recent_conversation(context: &[Message], count: usize) -> String {
+    let mut parts = Vec::new();
+    for msg in context.iter().rev().take(count).rev() {
+        let role = match msg.role {
+            Role::User => "user",
+            Role::Assistant => "assistant",
+            Role::System => "system",
+        };
+        let compact = msg.content.lines().next().unwrap_or("").trim();
+        if compact.is_empty() {
+            continue;
+        }
+        let clipped = if compact.len() > 120 {
+            format!("{}...", &compact[..120])
+        } else {
+            compact.to_string()
+        };
+        parts.push(format!("{role}: {clipped}"));
+    }
+    parts.join(" | ")
+}
+
+fn extract_user_goals(context: &[Message], input: &str, limit: usize) -> Vec<String> {
+    let mut goals = Vec::new();
+    for message in context.iter().rev() {
+        if message.role != Role::User {
+            continue;
+        }
+        if let Some(goal) = infer_goal_phrase(&message.content) {
+            if !goals.contains(&goal) {
+                goals.push(goal);
+            }
+        }
+        if goals.len() >= limit {
+            break;
+        }
+    }
+    if let Some(goal) = infer_goal_phrase(input) {
+        if !goals.contains(&goal) {
+            goals.push(goal);
+        }
+    }
+    goals.reverse();
+    goals
+}
+
+fn infer_goal_phrase(text: &str) -> Option<String> {
+    let lowered = text.to_lowercase();
+    for marker in ["i need to", "todo", "goal", "remember to"] {
+        if let Some(idx) = lowered.find(marker) {
+            let raw = text[idx..].trim();
+            if raw.is_empty() {
+                return None;
+            }
+            return Some(raw.to_string());
+        }
+    }
+    None
+}
+
 fn shell_quote(value: &str) -> String {
     let mut out = String::from("'");
     for c in value.chars() {
@@ -837,5 +1039,28 @@ mod tests {
         assert_eq!(result.outputs.len(), 1);
         assert!(result.approvals_required.is_empty());
         mock.assert_async().await;
+    }
+
+    #[test]
+    fn smart_context_message_includes_workspace_and_commands() {
+        let msg = build_smart_context_message(
+            &[Message {
+                role: Role::Assistant,
+                content: "done".to_string(),
+                timestamp: Utc::now(),
+                actions: vec![MessageAction {
+                    action_type: "run_command".to_string(),
+                    path: None,
+                    command: Some("cargo test".to_string()),
+                }],
+            }],
+            Some(std::path::Path::new("/tmp/workspaces/demo")),
+            "I need to deploy this",
+        )
+        .unwrap();
+        assert!(msg.content.contains("current_working_directory"));
+        assert!(msg.content.contains("recent_commands"));
+        assert!(msg.content.contains("cargo test"));
+        assert!(msg.content.contains("inferred_goals"));
     }
 }

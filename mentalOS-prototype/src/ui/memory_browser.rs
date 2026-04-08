@@ -262,6 +262,27 @@ fn matches_session_query(session: &SessionSummary, query_lower: &str) -> bool {
         || session.session_id.to_lowercase().contains(query_lower)
 }
 
+fn matches_session_query_with_content(
+    manager: &MemoryManager,
+    session: &SessionSummary,
+    query_lower: &str,
+) -> bool {
+    if matches_session_query(session, query_lower) {
+        return true;
+    }
+    if query_lower.is_empty() {
+        return true;
+    }
+
+    match manager.load_session(&session.workspace, &session.category, &session.session_id) {
+        Ok(Some(conversation)) => conversation
+            .messages
+            .iter()
+            .any(|msg| msg.content.to_lowercase().contains(query_lower)),
+        _ => false,
+    }
+}
+
 fn detect_active_session_id(
     workspace: &str,
     sessions: &[SessionSummary],
@@ -328,15 +349,11 @@ fn refresh_browser_state(
     );
 }
 
-fn ordered_filtered_sessions<'a>(
+fn ordered_sessions<'a>(
     sessions: &'a [SessionSummary],
-    query_lower: &str,
     active_session_id: Option<&str>,
 ) -> Vec<&'a SessionSummary> {
-    let mut filtered: Vec<&SessionSummary> = sessions
-        .iter()
-        .filter(|session| matches_session_query(session, query_lower))
-        .collect();
+    let mut filtered: Vec<&SessionSummary> = sessions.iter().collect();
 
     if let Some(active) = active_session_id {
         if let Some(index) = filtered
@@ -392,10 +409,13 @@ fn populate_sessions(
     }
 
     let query_lower = query.to_lowercase();
-    let filtered_sessions = ordered_filtered_sessions(sessions, &query_lower, active_session_id);
+    let filtered_sessions = ordered_sessions(sessions, active_session_id);
     let mut shown = 0usize;
 
     for session in filtered_sessions.iter() {
+        if !matches_session_query_with_content(manager, session, &query_lower) {
+            continue;
+        }
         if shown >= 30 {
             break;
         }
@@ -471,10 +491,11 @@ fn populate_sessions(
 mod tests {
     use super::{
         format_filtered_summary, format_session_summary, matches_session_query,
-        ordered_filtered_sessions,
+        matches_session_query_with_content, ordered_sessions,
     };
-    use crate::memory::SessionSummary;
+    use crate::memory::{MemoryManager, Role, SessionSummary};
     use chrono::{TimeZone, Utc};
+    use tempfile::TempDir;
 
     #[test]
     fn summary_pluralization_is_correct() {
@@ -524,7 +545,38 @@ mod tests {
             last_active: Utc.with_ymd_and_hms(2026, 3, 16, 12, 0, 0).unwrap(),
         };
         let sessions = [s1, s2];
-        let ordered = ordered_filtered_sessions(&sessions, "", Some("active"));
+        let ordered = ordered_sessions(&sessions, Some("active"));
         assert_eq!(ordered[0].session_id, "active");
+    }
+
+    #[test]
+    fn session_query_matches_message_content() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+        manager
+            .append_message(
+                "default",
+                "general",
+                Role::User,
+                "remember alpha deployment checklist",
+            )
+            .unwrap();
+        let session = manager
+            .list_sessions("default")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+
+        assert!(matches_session_query_with_content(
+            &manager,
+            &session,
+            "deployment"
+        ));
+        assert!(!matches_session_query_with_content(
+            &manager,
+            &session,
+            "nonexistent-token"
+        ));
     }
 }

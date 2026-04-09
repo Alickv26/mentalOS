@@ -88,3 +88,41 @@ fn sync_payload_updates_when_local_only_is_toggled() {
     assert_eq!(payload.conversations.len(), 2);
     assert_eq!(payload.skipped_local_only, 0);
 }
+
+#[test]
+fn project_workspace_link_enables_related_session_lookup() {
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+
+    manager
+        .append_message("demo", "general", Role::User, "create project alpha")
+        .expect("message should persist");
+    let session = manager
+        .list_sessions("demo")
+        .expect("sessions should list")
+        .into_iter()
+        .next()
+        .expect("session should exist");
+
+    let project_dir = temp_dir.path().join("workspaces").join("alpha");
+    std::fs::create_dir_all(&project_dir).expect("project directory should be created");
+    manager
+        .set_active_session("demo", "general", &session.session_id)
+        .expect("active session should set");
+    let linked = manager
+        .set_workspace_for_active_session("demo", "general", &project_dir.to_string_lossy())
+        .expect("workspace link should succeed");
+    assert!(linked, "expected workspace to be linked to active session");
+
+    let related = manager
+        .find_related_session_for_project("demo", &project_dir)
+        .expect("related session lookup should succeed")
+        .expect("related session should exist");
+    assert_eq!(related.session_id, session.session_id);
+
+    let loaded = manager
+        .load_related_conversation_for_project("demo", &project_dir)
+        .expect("related conversation should load")
+        .expect("conversation should exist");
+    assert_eq!(loaded.session_id, session.session_id);
+}

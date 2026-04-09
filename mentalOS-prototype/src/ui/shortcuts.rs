@@ -480,4 +480,14 @@ show_help = "Ctrl+Question"
         assert_eq!(loaded.get("show_help"), "Ctrl+Question");
         assert_eq!(loaded.get("manage_shortcuts"), "Ctrl+Comma");
     }
+
+    #[test]
+    fn core_help_and_onboarding_shortcuts_are_present_and_valid() {
+        let bindings = ShortcutBindings::default();
+        assert_eq!(bindings.get("show_help"), "Ctrl+Slash");
+        assert_eq!(bindings.get("show_onboarding"), "Ctrl+Shift+T");
+        validate_shortcut(&bindings.get("show_help")).expect("help shortcut should be valid");
+        validate_shortcut(&bindings.get("show_onboarding"))
+            .expect("onboarding shortcut should be valid");
+    }
 }

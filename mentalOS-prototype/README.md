@@ -110,6 +110,7 @@ Defaults (user-editable in Manage Shortcuts):
 - Architecture: `docs/ARCHITECTURE.md`
 - Performance: `docs/PERFORMANCE.md`
 - Manual QA plan: `docs/MANUAL_TEST_PLAN_0_7.md`
+- Phase status: `docs/PHASE0_STATUS.md`
 
 ## Reporting Issues
 

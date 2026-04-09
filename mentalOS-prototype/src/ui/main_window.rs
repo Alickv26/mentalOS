@@ -21,6 +21,7 @@ use crate::ui::project_dialog::{ProjectDecision, ProjectDialog};
 use crate::ui::shortcuts::ShortcutBindings;
 use crate::ui::shortcuts_help::ShortcutsHelp;
 use crate::ui::shortcuts_settings::ShortcutsSettings;
+use crate::ui::sync_selection::SyncSelectionDialog;
 use crate::ui::tasks_browser::TasksBrowser;
 
 /// The main mentalOS overlay window.
@@ -467,6 +468,11 @@ impl MainWindow {
 
             if bindings_snapshot.matches("open_tasks_browser", key, modifiers) {
                 TasksBrowser::show(&win_for_keys);
+                return glib::Propagation::Stop;
+            }
+
+            if bindings_snapshot.matches("open_sync_selection", key, modifiers) {
+                SyncSelectionDialog::show(&win_for_keys, "default");
                 return glib::Propagation::Stop;
             }
 

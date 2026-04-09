@@ -52,7 +52,7 @@ const STEPS: [TutorialStep; 5] = [
     },
     TutorialStep {
         title: "Customize Your Workflow",
-        body: "Start a new chat with Ctrl+N or open shortcut settings with Ctrl+Comma to customize bindings. Memory and tasks are persisted under ~/workspaces/.memory for continuity across sessions.",
+        body: "Start a new chat with Ctrl+N, open tasks with Ctrl+Shift+J, or open sync selection with Ctrl+Shift+S. Use Ctrl+Comma to customize bindings. Memory and tasks are persisted under ~/workspaces/.memory for continuity across sessions.",
     },
 ];
 

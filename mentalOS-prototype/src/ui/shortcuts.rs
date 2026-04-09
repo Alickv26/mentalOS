@@ -14,7 +14,7 @@ pub struct ShortcutDefinition {
     pub default: &'static str,
 }
 
-pub const SHORTCUT_DEFINITIONS: [ShortcutDefinition; 13] = [
+pub const SHORTCUT_DEFINITIONS: [ShortcutDefinition; 14] = [
     ShortcutDefinition {
         id: "focus_input",
         label: "Focus input",
@@ -38,6 +38,12 @@ pub const SHORTCUT_DEFINITIONS: [ShortcutDefinition; 13] = [
         label: "Open tasks browser",
         description: "Open the tracked tasks dialog.",
         default: "Ctrl+Shift+J",
+    },
+    ShortcutDefinition {
+        id: "open_sync_selection",
+        label: "Open sync selection",
+        description: "Open conversation sync selection dialog.",
+        default: "Ctrl+Shift+S",
     },
     ShortcutDefinition {
         id: "new_chat",
@@ -493,10 +499,13 @@ show_help = "Ctrl+Question"
         assert_eq!(bindings.get("show_help"), "Ctrl+Slash");
         assert_eq!(bindings.get("show_onboarding"), "Ctrl+Shift+T");
         assert_eq!(bindings.get("open_tasks_browser"), "Ctrl+Shift+J");
+        assert_eq!(bindings.get("open_sync_selection"), "Ctrl+Shift+S");
         validate_shortcut(&bindings.get("show_help")).expect("help shortcut should be valid");
         validate_shortcut(&bindings.get("show_onboarding"))
             .expect("onboarding shortcut should be valid");
         validate_shortcut(&bindings.get("open_tasks_browser"))
             .expect("tasks shortcut should be valid");
+        validate_shortcut(&bindings.get("open_sync_selection"))
+            .expect("sync selection shortcut should be valid");
     }
 }

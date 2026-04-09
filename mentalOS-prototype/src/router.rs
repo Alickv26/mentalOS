@@ -1161,4 +1161,21 @@ pwd
         let parsed = parse_ai_response(text);
         assert_eq!(parsed.commands, vec!["pwd".to_string()]);
     }
+
+    #[test]
+    fn detect_project_command_intent_handles_phrase_variants() {
+        assert_eq!(
+            detect_project_command_intent("run this project now"),
+            Some("run")
+        );
+        assert_eq!(
+            detect_project_command_intent("test the project please"),
+            Some("test")
+        );
+        assert_eq!(
+            detect_project_command_intent("build this quickly"),
+            Some("setup")
+        );
+        assert_eq!(detect_project_command_intent("open docs"), None);
+    }
 }

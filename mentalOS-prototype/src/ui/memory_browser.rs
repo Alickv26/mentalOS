@@ -213,6 +213,14 @@ fn format_filtered_summary(filtered: usize, total: usize) -> String {
     }
 }
 
+fn empty_state_message(query: &str) -> String {
+    if query.trim().is_empty() {
+        "No conversations saved yet.".to_string()
+    } else {
+        format!("No sessions found for '{query}'.")
+    }
+}
+
 fn matches_session_query(session: &SessionSummary, query_lower: &str) -> bool {
     if query_lower.is_empty() {
         return true;
@@ -432,11 +440,7 @@ fn populate_sessions(
         .set_text(&format_filtered_summary(shown, sessions.len()));
 
     if ctx.list_box.first_child().is_none() {
-        let message = if query.trim().is_empty() {
-            "No conversations saved yet.".to_string()
-        } else {
-            format!("No sessions found for '{query}'.")
-        };
+        let message = empty_state_message(query);
         let empty = Label::new(Some(&message));
         empty.add_css_class("welcome-hint");
         empty.set_halign(gtk4::Align::Start);
@@ -465,8 +469,8 @@ fn delete_session_and_refresh(session: &SessionSummary, ctx: &BrowserContext, qu
 #[cfg(test)]
 mod tests {
     use super::{
-        format_filtered_summary, format_session_summary, matches_session_query,
-        matches_session_query_with_content, ordered_sessions,
+        empty_state_message, format_filtered_summary, format_session_summary,
+        matches_session_query, matches_session_query_with_content, ordered_sessions,
     };
     use crate::memory::{MemoryManager, Role, SessionSummary};
     use chrono::{TimeZone, Utc};
@@ -483,6 +487,16 @@ mod tests {
         assert_eq!(format_filtered_summary(0, 0), "No sessions found");
         assert_eq!(format_filtered_summary(3, 10), "Showing 3 of 10 sessions");
         assert_eq!(format_filtered_summary(4, 4), "Showing 4 sessions");
+    }
+
+    #[test]
+    fn empty_state_message_respects_query_presence() {
+        assert_eq!(empty_state_message(""), "No conversations saved yet.");
+        assert_eq!(empty_state_message("   "), "No conversations saved yet.");
+        assert_eq!(
+            empty_state_message("deploy"),
+            "No sessions found for 'deploy'."
+        );
     }
 
     #[test]

@@ -1193,4 +1193,22 @@ pwd
         assert_eq!(parse_switch_target("switch openclaw"), None);
         assert_eq!(parse_switch_target("switch to"), None);
     }
+
+    #[test]
+    fn shell_quote_and_workspace_command_escape_single_quotes() {
+        let workspace = std::path::Path::new("/tmp/workspaces/it's-demo");
+        let command = "echo it's-ready";
+        let built = build_workspace_command(workspace, command);
+
+        assert!(
+            built.starts_with("sh -lc '"),
+            "workspace command should be wrapped for shell execution"
+        );
+        assert!(
+            built.contains("'\\''"),
+            "single quotes should be shell-escaped"
+        );
+        assert!(built.contains("cd "));
+        assert!(built.contains("echo "));
+    }
 }

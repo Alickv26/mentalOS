@@ -517,6 +517,21 @@ mod tests {
     }
 
     #[test]
+    fn session_query_is_case_insensitive_for_category_and_id() {
+        let session = SessionSummary {
+            workspace: "demo".to_string(),
+            category: "General-Dev".to_string(),
+            session_id: "ABC-123".to_string(),
+            title: Some("Title".to_string()),
+            created_at: Utc.with_ymd_and_hms(2026, 3, 16, 10, 0, 0).unwrap(),
+            last_active: Utc.with_ymd_and_hms(2026, 3, 16, 11, 0, 0).unwrap(),
+            local_only: false,
+        };
+        assert!(matches_session_query(&session, "general-dev"));
+        assert!(matches_session_query(&session, "abc-123"));
+    }
+
+    #[test]
     fn active_session_is_pinned_first() {
         let s1 = SessionSummary {
             workspace: "demo".to_string(),

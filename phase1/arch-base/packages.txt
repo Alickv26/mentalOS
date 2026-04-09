@@ -1,0 +1,58 @@
+# mentalOS Phase 1.1 package manifest
+# Format: <package> # justification
+# Install command reads first token on each non-comment line.
+
+## Core system
+base # essential Arch userspace baseline
+base-devel # build toolchain needed for source builds and AUR tooling
+linux # default Arch kernel
+linux-firmware # required firmware blobs for common hardware
+systemd # init, journald, bootctl provider
+systemd-sysvcompat # /sbin/init compatibility symlink for tooling
+networkmanager # network orchestration service used by desktop sessions
+iwd # modern Wi-Fi backend used by NetworkManager
+
+## Boot
+# systemd-boot is provided by the systemd package via bootctl
+efibootmgr # EFI boot entry management utility
+intel-ucode # Intel CPU microcode updates (remove if AMD-only)
+amd-ucode # AMD CPU microcode updates (remove if Intel-only)
+
+## Display
+wayland # Wayland protocol libraries
+sway # lightweight Wayland compositor/window manager
+xorg-xwayland # X11 app compatibility layer under Wayland
+mesa # open-source OpenGL/Vulkan userspace drivers
+
+## Audio (optional)
+pipewire # modern low-latency audio/video server
+wireplumber # PipeWire session manager
+
+## Essential tools
+git # version control and repository management
+curl # HTTP client for APIs/bootstrap scripts
+wget # fallback HTTP/FTP downloader
+vim # terminal editor (can be replaced with nano)
+man-db # man page indexing and reader
+man-pages # Linux manpage content
+
+## Development
+rust # Rust compiler + cargo on Arch
+rustup # toolchain manager for pinning/overrides
+nodejs # JS runtime for toolchains and CLIs
+npm # Node package manager
+python # scripting/runtime support
+python-pip # Python package installer
+
+## Security
+firejail # command sandboxing for execution isolation
+sudo # controlled privilege escalation
+
+## Fonts
+ttf-dejavu # baseline Latin/system UI fonts
+noto-fonts # broad unicode/script coverage
+noto-fonts-emoji # emoji rendering support
+
+## GTK runtime
+gtk4 # mentalOS UI runtime dependency
+adwaita-icon-theme # default GTK icon set

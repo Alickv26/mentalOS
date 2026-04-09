@@ -1,0 +1,15 @@
+# Minimal sway config for mentalOS kiosk-like startup
+set $mod Mod4
+
+output * bg #111111 solid_color
+
+default_border pixel 1
+focus_follows_mouse no
+
+# Terminal fallback
+bindsym $mod+Return exec foot
+bindsym $mod+Shift+q kill
+bindsym $mod+Shift+e exec swaynag -t warning -m 'Exit sway?' -b 'Exit' 'swaymsg exit'
+
+# Start mentalOS immediately on session start
+exec --no-startup-id mentalOS

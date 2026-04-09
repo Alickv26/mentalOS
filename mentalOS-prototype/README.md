@@ -112,6 +112,10 @@ Defaults (user-editable in Manage Shortcuts):
 - Manual QA plan: `docs/MANUAL_TEST_PLAN_0_7.md`
 - Phase status: `docs/PHASE0_STATUS.md`
 
+## Phase 1 Assets
+
+- Arch base bootstrap (Milestone 1.1): `../phase1/arch-base/README.md`
+
 ## Reporting Issues
 
 Use `../.github/ISSUE_TEMPLATE/bug_report.md` when filing bugs. It includes

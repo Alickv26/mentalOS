@@ -1211,4 +1211,13 @@ pwd
         assert!(built.contains("cd "));
         assert!(built.contains("echo "));
     }
+
+    #[test]
+    fn build_workspace_command_preserves_whitespace_in_paths() {
+        let workspace = std::path::Path::new("/tmp/workspaces/demo project");
+        let built = build_workspace_command(workspace, "pwd");
+        assert!(built.contains("demo project"));
+        assert!(built.contains("cd "));
+        assert!(built.contains("&& pwd"));
+    }
 }

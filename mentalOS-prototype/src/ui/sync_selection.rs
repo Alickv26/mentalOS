@@ -407,4 +407,19 @@ mod tests {
         let from = parse_date_filter("2026-05-01");
         assert!(!session_matches_date_range(&session, from, None));
     }
+
+    #[test]
+    fn date_range_is_inclusive_on_boundaries() {
+        let session = SessionSummary {
+            workspace: "demo".to_string(),
+            category: "general".to_string(),
+            session_id: "abc".to_string(),
+            title: Some("Test".to_string()),
+            created_at: Utc.with_ymd_and_hms(2026, 4, 8, 10, 0, 0).unwrap(),
+            last_active: Utc.with_ymd_and_hms(2026, 4, 8, 10, 5, 0).unwrap(),
+            local_only: false,
+        };
+        let boundary = parse_date_filter("2026-04-08");
+        assert!(session_matches_date_range(&session, boundary, boundary));
+    }
 }

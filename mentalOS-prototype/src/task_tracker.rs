@@ -358,4 +358,20 @@ mod tests {
         let normalized = normalize_task_description("  Fix   auth bug...  ");
         assert_eq!(normalized, "fix auth bug");
     }
+
+    #[test]
+    fn parse_relative_due_date_phrases_are_supported() {
+        let tomorrow = TaskTracker::parse_due_date("tomorrow");
+        let next_week = TaskTracker::parse_due_date("next week");
+        let in_two_days = TaskTracker::parse_due_date("2 days");
+
+        assert!(tomorrow.is_some(), "tomorrow should parse");
+        assert!(next_week.is_some(), "next week should parse");
+        assert!(in_two_days.is_some(), "N days should parse");
+
+        let now = Utc::now();
+        assert!(tomorrow.expect("tomorrow date") >= now);
+        assert!(next_week.expect("next week date") >= now);
+        assert!(in_two_days.expect("2 days date") >= now);
+    }
 }

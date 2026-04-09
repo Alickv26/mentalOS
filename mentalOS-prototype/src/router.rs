@@ -1178,4 +1178,19 @@ pwd
         );
         assert_eq!(detect_project_command_intent("open docs"), None);
     }
+
+    #[test]
+    fn parse_switch_target_handles_spacing_and_optional_agent_keyword() {
+        assert_eq!(parse_switch_target("switch to ollama"), Some("ollama"));
+        assert_eq!(
+            parse_switch_target("switch agent to   openclaw  "),
+            Some("openclaw")
+        );
+        assert_eq!(
+            parse_switch_target("switch Agent to phi3:mini"),
+            Some("phi3:mini")
+        );
+        assert_eq!(parse_switch_target("switch openclaw"), None);
+        assert_eq!(parse_switch_target("switch to"), None);
+    }
 }

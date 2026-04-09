@@ -82,6 +82,8 @@ Defaults (user-editable in Manage Shortcuts):
   - `cargo test`
 - Fast suite:
   - `cargo test -q`
+- Phase 0 preflight suite:
+  - `./scripts/preflight_phase0.sh`
 - Live Ollama integration test:
   - `MENTALOS_LIVE_OLLAMA=1 cargo test live_ollama`
 - Live OpenClaw integration test:
@@ -106,6 +108,7 @@ Defaults (user-editable in Manage Shortcuts):
 - FAQ: `docs/FAQ.md`
 - Architecture: `docs/ARCHITECTURE.md`
 - Performance: `docs/PERFORMANCE.md`
+- Manual QA plan: `docs/MANUAL_TEST_PLAN_0_7.md`
 
 ## Reporting Issues
 

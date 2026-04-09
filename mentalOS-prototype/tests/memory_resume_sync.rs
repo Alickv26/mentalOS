@@ -1,4 +1,4 @@
-use mental_os::memory::{MemoryManager, Role};
+use mental_os::memory::{MemoryManager, MessageAction, Role};
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -261,4 +261,45 @@ fn sync_payload_ignores_missing_ids_and_skips_local_only() {
     assert_eq!(payload.conversations.len(), 1);
     assert_eq!(payload.skipped_local_only, 1);
     assert_eq!(payload.conversations[0].conversation.session_id, second);
+}
+
+#[test]
+fn sync_payload_keeps_action_paths_while_redacting_message_content() {
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+
+    manager
+        .append_message_with_actions(
+            "demo",
+            "general",
+            Role::Assistant,
+            "Created project with token=abc123",
+            vec![MessageAction {
+                action_type: "create_project".to_string(),
+                path: Some("/tmp/workspaces/demo-app".to_string()),
+                command: None,
+            }],
+        )
+        .expect("message with action should persist");
+    let session = manager
+        .list_sessions("demo")
+        .expect("sessions should list")
+        .into_iter()
+        .next()
+        .expect("session should exist");
+
+    let payload = manager
+        .build_sync_payload(
+            "demo",
+            &[(session.category.clone(), session.session_id.clone())],
+        )
+        .expect("payload should build");
+
+    assert_eq!(payload.conversations.len(), 1);
+    let exported = &payload.conversations[0].conversation;
+    assert_eq!(
+        exported.messages[0].actions[0].path.as_deref(),
+        Some("/tmp/workspaces/demo-app")
+    );
+    assert!(!exported.messages[0].content.contains("abc123"));
 }

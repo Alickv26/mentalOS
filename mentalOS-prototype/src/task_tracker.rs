@@ -2,6 +2,7 @@ use crate::error::Result;
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -76,6 +77,7 @@ impl TaskTracker {
         project_name: Option<&str>,
     ) -> Vec<Task> {
         let mut added_tasks = Vec::new();
+        let mut seen_descriptions = HashSet::new();
 
         let patterns = Self::task_patterns();
 
@@ -83,6 +85,13 @@ impl TaskTracker {
             for cap in pattern.regex.captures_iter(content) {
                 if let Some(desc_match) = cap.get(1) {
                     let description = desc_match.as_str().trim().to_string();
+                    if description.is_empty() {
+                        continue;
+                    }
+                    let normalized = normalize_task_description(&description);
+                    if !seen_descriptions.insert(normalized) {
+                        continue;
+                    }
 
                     let mut priority = TaskPriority::Medium;
                     let mut due_date = None;
@@ -270,6 +279,16 @@ struct TaskPattern {
     regex: Regex,
 }
 
+fn normalize_task_description(description: &str) -> String {
+    description
+        .trim()
+        .trim_end_matches(['.', ',', ';', ':', '!', '?'])
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,5 +351,11 @@ mod tests {
             .unwrap();
         assert!(updated.is_some());
         assert_eq!(updated.unwrap().status, TaskStatus::Completed);
+    }
+
+    #[test]
+    fn normalize_task_description_trims_punctuation_and_spaces() {
+        let normalized = normalize_task_description("  Fix   auth bug...  ");
+        assert_eq!(normalized, "fix auth bug");
     }
 }

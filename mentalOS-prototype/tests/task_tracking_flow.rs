@@ -35,3 +35,28 @@ fn extracted_tasks_persist_and_can_be_completed() {
     assert_eq!(completed.status, TaskStatus::Completed);
     assert_eq!(completed.related_conversation.as_deref(), Some("conv-42"));
 }
+
+#[test]
+fn duplicate_task_descriptions_in_single_message_are_deduped() {
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let mut tracker = TaskTracker::new(temp_dir.path().to_path_buf());
+
+    let created = tracker.extract_and_add_tasks(
+        "TODO: fix auth bug. TODO: fix auth bug.",
+        Some("conv-dup"),
+        Some("alpha-app"),
+    );
+
+    assert_eq!(
+        created.len(),
+        1,
+        "duplicate descriptions should be collapsed"
+    );
+    assert!(
+        created[0]
+            .description
+            .to_lowercase()
+            .contains("fix auth bug")
+    );
+    assert_eq!(tracker.get_pending_count(), 1);
+}

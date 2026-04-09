@@ -1062,4 +1062,60 @@ mod tests {
         assert!(msg.content.contains("cargo test"));
         assert!(msg.content.contains("inferred_goals"));
     }
+
+    #[test]
+    fn extract_user_goals_deduplicates_and_respects_limit() {
+        let now = Utc::now();
+        let context = vec![
+            Message {
+                role: Role::User,
+                content: "I need to ship v0.7".to_string(),
+                timestamp: now,
+                actions: Vec::new(),
+            },
+            Message {
+                role: Role::User,
+                content: "TODO stabilize sync export".to_string(),
+                timestamp: now,
+                actions: Vec::new(),
+            },
+            Message {
+                role: Role::Assistant,
+                content: "Acknowledged".to_string(),
+                timestamp: now,
+                actions: Vec::new(),
+            },
+            Message {
+                role: Role::User,
+                content: "remember to verify onboarding".to_string(),
+                timestamp: now,
+                actions: Vec::new(),
+            },
+        ];
+
+        let goals = extract_user_goals(&context, "goal polish accessibility", 2);
+        assert_eq!(goals.len(), 3);
+        assert!(
+            goals
+                .iter()
+                .any(|g| g.to_lowercase().contains("goal polish"))
+        );
+        assert!(
+            goals
+                .iter()
+                .any(|g| g.to_lowercase().contains("todo stabilize"))
+        );
+        assert!(
+            goals
+                .iter()
+                .any(|g| g.to_lowercase().contains("remember to verify"))
+        );
+
+        let deduped = extract_user_goals(&context, "TODO stabilize sync export", 4);
+        let dup_count = deduped
+            .iter()
+            .filter(|g| g.to_lowercase().contains("todo stabilize sync export"))
+            .count();
+        assert_eq!(dup_count, 1);
+    }
 }

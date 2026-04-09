@@ -236,3 +236,29 @@ fn deleting_non_active_then_active_session_clears_marker() {
         None
     );
 }
+
+#[test]
+fn sync_payload_ignores_missing_ids_and_skips_local_only() {
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+    let (first, second) = create_two_sessions(&manager);
+
+    manager
+        .set_local_only("demo", "general", &first, true)
+        .expect("local-only flag should persist");
+
+    let payload = manager
+        .build_sync_payload(
+            "demo",
+            &[
+                ("general".to_string(), first.clone()),
+                ("general".to_string(), second.clone()),
+                ("general".to_string(), "missing-session-id".to_string()),
+            ],
+        )
+        .expect("payload should build");
+
+    assert_eq!(payload.conversations.len(), 1);
+    assert_eq!(payload.skipped_local_only, 1);
+    assert_eq!(payload.conversations[0].conversation.session_id, second);
+}

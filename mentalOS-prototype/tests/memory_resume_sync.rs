@@ -1,4 +1,5 @@
 use mental_os::memory::{MemoryManager, Role};
+use serde_json::Value;
 use tempfile::TempDir;
 
 fn create_two_sessions(manager: &MemoryManager) -> (String, String) {
@@ -125,4 +126,83 @@ fn project_workspace_link_enables_related_session_lookup() {
         .expect("related conversation should load")
         .expect("conversation should exist");
     assert_eq!(loaded.session_id, session.session_id);
+}
+
+#[test]
+fn new_chat_marker_routes_future_messages_to_new_session() {
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+
+    manager
+        .append_message("demo", "general", Role::User, "hello from first")
+        .expect("first message should persist");
+    let first_session = manager
+        .list_sessions("demo")
+        .expect("sessions should list")
+        .into_iter()
+        .next()
+        .expect("first session should exist")
+        .session_id;
+
+    manager
+        .set_active_session("demo", "general", "NEW")
+        .expect("NEW marker should set");
+    manager
+        .append_message("demo", "general", Role::User, "hello from second")
+        .expect("second message should persist");
+
+    let sessions = manager.list_sessions("demo").expect("sessions should list");
+    assert_eq!(sessions.len(), 2, "NEW marker should force a new session");
+    let active = manager
+        .active_session_id("demo", "general")
+        .expect("active marker should read")
+        .expect("active marker should exist");
+    assert_ne!(active, first_session);
+
+    let latest = manager
+        .load_session("demo", "general", &active)
+        .expect("latest session should load")
+        .expect("latest conversation should exist");
+    assert_eq!(latest.messages.len(), 1);
+    assert!(latest.messages[0].content.contains("second"));
+}
+
+#[test]
+fn exported_sync_payload_has_expected_shape_and_redacts_tokens() {
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+
+    manager
+        .append_message(
+            "demo",
+            "general",
+            Role::User,
+            "token=super-secret-value and api_key=abc123",
+        )
+        .expect("message should persist");
+    let session = manager
+        .list_sessions("demo")
+        .expect("sessions should list")
+        .into_iter()
+        .next()
+        .expect("session should exist");
+
+    let export = manager
+        .export_sync_payload(
+            "demo",
+            &[(session.category.clone(), session.session_id.clone())],
+        )
+        .expect("sync export should succeed");
+    assert!(export.path.exists());
+    assert!(export.redactions >= 1, "expected at least one redaction");
+
+    let raw = std::fs::read_to_string(&export.path).expect("export file should be readable");
+    assert!(!raw.contains("super-secret-value"));
+    assert!(!raw.contains("abc123"));
+
+    let parsed: Value = serde_json::from_str(&raw).expect("export json should parse");
+    assert_eq!(parsed["workspace"], Value::String("demo".to_string()));
+    assert!(parsed["exported_at"].is_string());
+    assert!(parsed["conversations"].is_array());
+    assert!(parsed["redactions"].as_u64().unwrap_or(0) >= 1);
 }

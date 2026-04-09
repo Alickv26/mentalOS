@@ -1118,4 +1118,47 @@ mod tests {
             .count();
         assert_eq!(dup_count, 1);
     }
+
+    #[test]
+    fn parse_ai_response_extracts_unique_commands_from_mixed_blocks() {
+        let text = r#"
+message text
+```json
+{"commands":["cargo test","cargo test","cargo run"]}
+```
+```bash
+cargo run
+# comment
+echo hi
+```
+$ echo hi
+> git status
+"#;
+
+        let parsed = parse_ai_response(text);
+        assert_eq!(
+            parsed.commands,
+            vec![
+                "cargo test".to_string(),
+                "cargo run".to_string(),
+                "echo hi".to_string(),
+                "git status".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_ai_response_handles_invalid_json_block_without_panicking() {
+        let text = r#"
+```json
+{not valid json}
+```
+```sh
+pwd
+```
+"#;
+
+        let parsed = parse_ai_response(text);
+        assert_eq!(parsed.commands, vec!["pwd".to_string()]);
+    }
 }

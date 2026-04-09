@@ -147,3 +147,52 @@ fn app_bar_exposes_accessible_controls_for_critical_actions() {
         },
     );
 }
+
+#[test]
+fn app_bar_exposes_status_and_progress_accessibility_metadata() {
+    run_on_gtk_thread(
+        "app_bar_exposes_status_and_progress_accessibility_metadata",
+        || {
+            let bar = AppBar::new();
+            let container = bar.container.clone();
+
+            let mut found_status = false;
+            let mut found_progress = false;
+
+            let mut child = container.first_child();
+            while let Some(widget) = child {
+                if let Ok(row) = widget.clone().downcast::<gtk4::Box>() {
+                    let mut row_child = row.first_child();
+                    while let Some(node) = row_child {
+                        if let Ok(label) = node.clone().downcast::<gtk4::Label>()
+                            && gtk4::test_accessible_has_role(&label, gtk4::AccessibleRole::Status)
+                        {
+                            found_status = true;
+                            assert!(gtk4::test_accessible_has_property(
+                                &label,
+                                gtk4::AccessibleProperty::Label
+                            ));
+                        }
+                        row_child = node.next_sibling();
+                    }
+                }
+
+                if let Ok(progress) = widget.clone().downcast::<gtk4::ProgressBar>() {
+                    found_progress = true;
+                    assert!(gtk4::test_accessible_has_role(
+                        &progress,
+                        gtk4::AccessibleRole::ProgressBar
+                    ));
+                    assert!(gtk4::test_accessible_has_property(
+                        &progress,
+                        gtk4::AccessibleProperty::Label
+                    ));
+                }
+                child = widget.next_sibling();
+            }
+
+            assert!(found_status, "expected an AI status label in app bar");
+            assert!(found_progress, "expected app bar progress bar");
+        },
+    );
+}

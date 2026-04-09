@@ -206,3 +206,33 @@ fn exported_sync_payload_has_expected_shape_and_redacts_tokens() {
     assert!(parsed["conversations"].is_array());
     assert!(parsed["redactions"].as_u64().unwrap_or(0) >= 1);
 }
+
+#[test]
+fn deleting_non_active_then_active_session_clears_marker() {
+    let temp_dir = TempDir::new().expect("temp dir should be created");
+    let manager = MemoryManager::new(temp_dir.path().to_path_buf());
+    let (first, second) = create_two_sessions(&manager);
+
+    manager
+        .set_active_session("demo", "general", &second)
+        .expect("active session should set");
+    manager
+        .delete_session("demo", "general", &first)
+        .expect("non-active session should delete");
+
+    let active = manager
+        .active_session_id("demo", "general")
+        .expect("active marker should read")
+        .expect("active marker should exist");
+    assert_eq!(active, second);
+
+    manager
+        .delete_session("demo", "general", &second)
+        .expect("active session should delete");
+    assert_eq!(
+        manager
+            .active_session_id("demo", "general")
+            .expect("active marker should read"),
+        None
+    );
+}

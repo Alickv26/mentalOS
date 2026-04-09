@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if command -v mentalOS >/dev/null 2>&1; then
+  exec mentalOS
+fi
+
+echo "mentalOS binary not found in ISO image."
+echo "Place mentalOS at /usr/local/bin/mentalOS before building."
+exec swaymsg exit

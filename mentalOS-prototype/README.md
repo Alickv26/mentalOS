@@ -114,7 +114,9 @@ Defaults (user-editable in Manage Shortcuts):
 
 ## Phase 1 Assets
 
+- Phase 1 workspace index: `../phase1/README.md`
 - Arch base bootstrap (Milestone 1.1): `../phase1/arch-base/README.md`
+- Archiso kickoff profile (Milestone 1.2): `../phase1/iso/README.md`
 
 ## Reporting Issues
 

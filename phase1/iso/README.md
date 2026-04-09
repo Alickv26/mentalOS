@@ -9,6 +9,8 @@ This profile is an initial `archiso` skeleton for generating a bootable mentalOS
 - `pacman.conf`: package repos/options for build.
 - `airootfs/root/customize_airootfs.sh`: live rootfs customization script.
 - `build-iso.sh`: one-command build wrapper.
+- `test-qemu.sh`: quick local VM boot launcher.
+- `MANUAL_BOOT_TESTS.md`: structured post-build validation checklist.
 
 ## Build
 

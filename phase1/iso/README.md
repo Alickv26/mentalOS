@@ -39,6 +39,7 @@ Build options:
 - `MENTALOS_BINARY=/path/to/mentalOS ./build-iso.sh` to use a custom prebuilt binary.
 - `FORCE_REBUILD=1 ./build-iso.sh` to rebuild binary even when one exists.
 - `AUTO_INSTALL_TOOLS=0 ./build-iso.sh` to disable auto-install of missing host tools.
+- `KEEP_STAGE=1 ./build-iso.sh` to keep staged build artifacts in `airootfs/` after the run.
 
 ## Test Checklist (VM)
 

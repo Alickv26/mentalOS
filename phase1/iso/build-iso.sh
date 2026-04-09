@@ -14,6 +14,7 @@ FORCE_REBUILD="${FORCE_REBUILD:-0}"
 AUTO_INSTALL_TOOLS="${AUTO_INSTALL_TOOLS:-1}"
 INSTALLER_SOURCE_DIR="${REPO_ROOT}/phase1/arch-base"
 INSTALLER_STAGE_DIR="${PROFILE_DIR}/airootfs/opt/mentalos/arch-base"
+KEEP_STAGE="${KEEP_STAGE:-0}"
 
 log() { printf '[build-iso] %s\n' "$*"; }
 
@@ -89,6 +90,15 @@ stage_installer_assets() {
   rsync -a --delete --exclude 'config/home/*' "${INSTALLER_SOURCE_DIR}/" "${INSTALLER_STAGE_DIR}/"
 }
 
+cleanup_stage() {
+  if [[ "${KEEP_STAGE}" == "1" ]]; then
+    log "KEEP_STAGE=1 set; leaving staged assets in profile tree"
+    return
+  fi
+  rm -f "${PROFILE_DIR}/airootfs/usr/local/bin/mentalOS"
+  rm -rf "${INSTALLER_STAGE_DIR}"
+}
+
 build_iso() {
   mkdir -p "${OUT_DIR}"
   log "Running mkarchiso"
@@ -96,6 +106,7 @@ build_iso() {
 }
 
 main() {
+  trap cleanup_stage EXIT
   require_tools
   build_binary_if_needed
   stage_binary

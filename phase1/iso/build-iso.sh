@@ -7,35 +7,86 @@ PROTO_DIR="${REPO_ROOT}/mentalOS-prototype"
 PROFILE_DIR="${SCRIPT_DIR}"
 OUT_DIR="${PROFILE_DIR}/out"
 WORK_DIR="${WORK_DIR:-/tmp/archiso-tmp}"
-BINARY_PATH="${PROTO_DIR}/target/release/mentalOS"
+DEFAULT_BINARY_PATH="${PROTO_DIR}/target/release/mentalOS"
+BINARY_PATH="${MENTALOS_BINARY:-${DEFAULT_BINARY_PATH}}"
+USE_EXISTING_BINARY="${USE_EXISTING_BINARY:-1}"
+FORCE_REBUILD="${FORCE_REBUILD:-0}"
+AUTO_INSTALL_TOOLS="${AUTO_INSTALL_TOOLS:-1}"
+INSTALLER_SOURCE_DIR="${REPO_ROOT}/phase1/arch-base"
+INSTALLER_STAGE_DIR="${PROFILE_DIR}/airootfs/opt/mentalos/arch-base"
 
 log() { printf '[build-iso] %s\n' "$*"; }
 
-require_tools() {
-  local tools=(mkarchiso rsync)
-  local missing=()
-  for t in "${tools[@]}"; do
-    command -v "$t" >/dev/null 2>&1 || missing+=("$t")
-  done
-  if ((${#missing[@]})); then
-    echo "Missing tools: ${missing[*]}" >&2
-    echo "Install archiso package first: sudo pacman -S --needed archiso" >&2
-    exit 1
+install_tool_package() {
+  local package="$1"
+  if [[ "${AUTO_INSTALL_TOOLS}" != "1" ]]; then
+    return 1
   fi
+  if ! command -v pacman >/dev/null 2>&1; then
+    return 1
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    return 1
+  fi
+
+  log "Auto-installing missing package: ${package}"
+  sudo pacman -S --needed --noconfirm "${package}"
 }
 
-build_binary() {
+ensure_tool() {
+  local cmd="$1"
+  local package="$2"
+  if command -v "${cmd}" >/dev/null 2>&1; then
+    return 0
+  fi
+  if install_tool_package "${package}" && command -v "${cmd}" >/dev/null 2>&1; then
+    log "Installed ${package} for ${cmd}"
+    return 0
+  fi
+  echo "Missing required tool '${cmd}' (package: ${package})." >&2
+  echo "Install manually: sudo pacman -S --needed ${package}" >&2
+  exit 1
+}
+
+require_tools() {
+  ensure_tool mkarchiso archiso
+  ensure_tool rsync rsync
+  ensure_tool sudo sudo
+}
+
+build_binary_if_needed() {
+  if [[ "${FORCE_REBUILD}" == "1" ]]; then
+    log "FORCE_REBUILD=1, rebuilding mentalOS release binary"
+    cargo build --manifest-path "${PROTO_DIR}/Cargo.toml" --release
+    return
+  fi
+
+  if [[ "${USE_EXISTING_BINARY}" == "1" && -x "${BINARY_PATH}" ]]; then
+    log "Using existing binary: ${BINARY_PATH}"
+    return
+  fi
+
   log "Building mentalOS release binary"
   cargo build --manifest-path "${PROTO_DIR}/Cargo.toml" --release
-  if [[ ! -x "${BINARY_PATH}" ]]; then
-    echo "Expected binary not found: ${BINARY_PATH}" >&2
-    exit 1
-  fi
 }
 
 stage_binary() {
+  if [[ ! -x "${BINARY_PATH}" ]]; then
+    echo "Expected binary not found or not executable: ${BINARY_PATH}" >&2
+    exit 1
+  fi
   log "Staging mentalOS binary into airootfs"
   install -Dm0755 "${BINARY_PATH}" "${PROFILE_DIR}/airootfs/usr/local/bin/mentalOS"
+}
+
+stage_installer_assets() {
+  if [[ ! -d "${INSTALLER_SOURCE_DIR}" ]]; then
+    echo "Installer source directory missing: ${INSTALLER_SOURCE_DIR}" >&2
+    exit 1
+  fi
+  log "Staging installer assets from ${INSTALLER_SOURCE_DIR}"
+  mkdir -p "${INSTALLER_STAGE_DIR}"
+  rsync -a --delete --exclude 'config/home/*' "${INSTALLER_SOURCE_DIR}/" "${INSTALLER_STAGE_DIR}/"
 }
 
 build_iso() {
@@ -46,8 +97,9 @@ build_iso() {
 
 main() {
   require_tools
-  build_binary
+  build_binary_if_needed
   stage_binary
+  stage_installer_assets
   build_iso
   log "ISO build complete. Output files:"
   ls -lh "${OUT_DIR}"/*.iso

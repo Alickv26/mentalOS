@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_SCRIPT="/opt/mentalos/arch-base/install-base.sh"
+
+if [[ ! -x "${INSTALL_SCRIPT}" ]]; then
+  echo "Installer script missing: ${INSTALL_SCRIPT}" >&2
+  exit 1
+fi
+
+if [[ "${1:-}" == "--run" ]]; then
+  shift
+  echo "Running full installer. This will modify disk partitions."
+  exec sudo -E "${INSTALL_SCRIPT}" "$@"
+fi
+
+echo "mentalOS installer preview mode (safe)."
+echo "Use --run to execute full installation."
+echo
+exec sudo -E DRY_RUN=1 FORCE=1 "${INSTALL_SCRIPT}" "$@"

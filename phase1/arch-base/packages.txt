@@ -23,6 +23,7 @@ wayland # Wayland protocol libraries
 sway # lightweight Wayland compositor/window manager
 xorg-xwayland # X11 app compatibility layer under Wayland
 mesa # open-source OpenGL/Vulkan userspace drivers
+foot # minimal Wayland terminal emulator used by sway bindings
 
 ## Audio (optional)
 pipewire # modern low-latency audio/video server

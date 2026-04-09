@@ -1,6 +1,8 @@
 # Phase 1 Manual Boot Tests
 
 Use this after building an ISO with `./build-iso.sh`.
+Primary virtualization baseline: QEMU.
+Secondary path: VirtualBox checklist in `VIRTUALBOX_CHECKLIST.md`.
 
 ## A. VM Boot Validation
 

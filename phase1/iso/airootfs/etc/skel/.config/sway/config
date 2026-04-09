@@ -2,5 +2,6 @@ set $mod Mod4
 output * bg #111111 solid_color
 focus_follows_mouse no
 exec --no-startup-id /usr/local/bin/mentalos-launch
+bindsym $mod+i exec foot -e /usr/local/bin/mentalos-install
 bindsym $mod+Shift+q kill
 bindsym $mod+Shift+e exec swaynag -t warning -m 'Exit sway?' -b 'Exit' 'swaymsg exit'

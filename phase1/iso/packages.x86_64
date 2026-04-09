@@ -8,6 +8,7 @@ wayland
 sway
 xorg-xwayland
 mesa
+foot
 pipewire
 wireplumber
 git

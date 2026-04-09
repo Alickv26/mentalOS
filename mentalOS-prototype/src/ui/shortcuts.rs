@@ -14,7 +14,7 @@ pub struct ShortcutDefinition {
     pub default: &'static str,
 }
 
-pub const SHORTCUT_DEFINITIONS: [ShortcutDefinition; 12] = [
+pub const SHORTCUT_DEFINITIONS: [ShortcutDefinition; 13] = [
     ShortcutDefinition {
         id: "focus_input",
         label: "Focus input",
@@ -32,6 +32,12 @@ pub const SHORTCUT_DEFINITIONS: [ShortcutDefinition; 12] = [
         label: "Open memory browser",
         description: "Browse stored conversation memory sessions.",
         default: "Ctrl+Shift+M",
+    },
+    ShortcutDefinition {
+        id: "open_tasks_browser",
+        label: "Open tasks browser",
+        description: "Open the tracked tasks dialog.",
+        default: "Ctrl+Shift+J",
     },
     ShortcutDefinition {
         id: "new_chat",
@@ -486,8 +492,11 @@ show_help = "Ctrl+Question"
         let bindings = ShortcutBindings::default();
         assert_eq!(bindings.get("show_help"), "Ctrl+Slash");
         assert_eq!(bindings.get("show_onboarding"), "Ctrl+Shift+T");
+        assert_eq!(bindings.get("open_tasks_browser"), "Ctrl+Shift+J");
         validate_shortcut(&bindings.get("show_help")).expect("help shortcut should be valid");
         validate_shortcut(&bindings.get("show_onboarding"))
             .expect("onboarding shortcut should be valid");
+        validate_shortcut(&bindings.get("open_tasks_browser"))
+            .expect("tasks shortcut should be valid");
     }
 }

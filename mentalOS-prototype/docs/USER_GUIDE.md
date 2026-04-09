@@ -64,6 +64,7 @@ Default bindings (all editable):
 - `Ctrl+L`: focus input
 - `Ctrl+K`: open app launcher
 - `Ctrl+Shift+M`: open memory browser
+- `Ctrl+Shift+J`: open tasks browser
 - `Ctrl+Shift+H`: toggle high contrast
 - `Ctrl+Plus`: increase font size
 - `Ctrl+Minus`: decrease font size

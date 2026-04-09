@@ -528,6 +528,32 @@ mod tests {
     }
 
     #[test]
+    fn missing_active_session_keeps_original_order() {
+        let s1 = SessionSummary {
+            workspace: "demo".to_string(),
+            category: "general".to_string(),
+            session_id: "first".to_string(),
+            title: Some("First".to_string()),
+            created_at: Utc.with_ymd_and_hms(2026, 3, 16, 10, 0, 0).unwrap(),
+            last_active: Utc.with_ymd_and_hms(2026, 3, 16, 11, 0, 0).unwrap(),
+            local_only: false,
+        };
+        let s2 = SessionSummary {
+            workspace: "demo".to_string(),
+            category: "general".to_string(),
+            session_id: "second".to_string(),
+            title: Some("Second".to_string()),
+            created_at: Utc.with_ymd_and_hms(2026, 3, 16, 12, 0, 0).unwrap(),
+            last_active: Utc.with_ymd_and_hms(2026, 3, 16, 13, 0, 0).unwrap(),
+            local_only: false,
+        };
+        let sessions = [s1, s2];
+        let ordered = ordered_sessions(&sessions, Some("missing"));
+        assert_eq!(ordered[0].session_id, "first");
+        assert_eq!(ordered[1].session_id, "second");
+    }
+
+    #[test]
     fn session_query_matches_message_content() {
         let temp_dir = TempDir::new().unwrap();
         let manager = MemoryManager::new(temp_dir.path().to_path_buf());

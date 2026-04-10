@@ -20,6 +20,12 @@ if [[ ! -e /boot/initramfs-linux.img ]]; then
   fi
 fi
 
+# Keep only the primary initramfs image. Fallback/extra images can overflow
+# archiso's EFI FAT image and cause "Disk full" during mkarchiso.
+if [[ -e /boot/initramfs-linux.img ]]; then
+  find /boot -maxdepth 1 -type f -name 'initramfs-*.img' ! -name 'initramfs-linux.img' -delete
+fi
+
 useradd -m -G wheel -s /bin/bash user || true
 mkdir -p /etc/sudoers.d
 printf '%%wheel ALL=(ALL:ALL) ALL\n' > /etc/sudoers.d/10-wheel

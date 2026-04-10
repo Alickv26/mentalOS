@@ -26,25 +26,21 @@ if ! command -v qemu-system-x86_64 >/dev/null 2>&1; then
 fi
 
 find_ovmf_paths() {
-  local code_candidates=(
-    "/usr/share/OVMF/OVMF_CODE.fd"
-    "/usr/share/edk2/x64/OVMF_CODE.fd"
-    "/usr/share/edk2/x64/OVMF_CODE.4m.fd"
+  # Keep OVMF code/vars variants paired (2M with 2M, 4M with 4M).
+  local pairs=(
+    "/usr/share/OVMF/OVMF_CODE.fd:/usr/share/OVMF/OVMF_VARS.fd"
+    "/usr/share/edk2/x64/OVMF_CODE.fd:/usr/share/edk2/x64/OVMF_VARS.fd"
+    "/usr/share/edk2/x64/OVMF_CODE.4m.fd:/usr/share/edk2/x64/OVMF_VARS.4m.fd"
   )
-  local vars_candidates=(
-    "/usr/share/OVMF/OVMF_VARS.fd"
-    "/usr/share/edk2/x64/OVMF_VARS.fd"
-    "/usr/share/edk2/x64/OVMF_VARS.4m.fd"
-  )
-  local code vars
+  local pair code vars
 
-  for code in "${code_candidates[@]}"; do
-    for vars in "${vars_candidates[@]}"; do
-      if [[ -f "${code}" && -f "${vars}" ]]; then
-        printf '%s\n%s\n' "${code}" "${vars}"
-        return 0
-      fi
-    done
+  for pair in "${pairs[@]}"; do
+    code="${pair%%:*}"
+    vars="${pair##*:}"
+    if [[ -f "${code}" && -f "${vars}" ]]; then
+      printf '%s\n%s\n' "${code}" "${vars}"
+      return 0
+    fi
   done
   return 1
 }
@@ -64,10 +60,7 @@ fi
 OVMF_CODE="$(printf '%s\n' "${OVMF_PATHS}" | sed -n '1p')"
 OVMF_VARS_TEMPLATE="$(printf '%s\n' "${OVMF_PATHS}" | sed -n '2p')"
 OVMF_VARS_RUNTIME="/tmp/OVMF_VARS_mentalos.fd"
-
-if [[ ! -f "${OVMF_VARS_RUNTIME}" ]]; then
-  cp "${OVMF_VARS_TEMPLATE}" "${OVMF_VARS_RUNTIME}"
-fi
+cp "${OVMF_VARS_TEMPLATE}" "${OVMF_VARS_RUNTIME}"
 
 echo "Booting ${ISO_PATH} in QEMU..."
 qemu-system-x86_64 \

@@ -45,6 +45,8 @@ Build options:
 
 1. Boot ISO in QEMU (baseline):
    - `./test-qemu.sh`
+   - Script auto-installs missing `qemu-desktop` and `edk2-ovmf` on Arch by default.
+   - Set `AUTO_INSTALL_TOOLS=0 ./test-qemu.sh` to disable auto-install.
 2. Verify auto-login user session on tty1.
 3. Verify sway starts.
 4. Verify `mentalOS` launches automatically.

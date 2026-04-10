@@ -40,6 +40,8 @@ Build options:
 - `FORCE_REBUILD=1 ./build-iso.sh` to rebuild binary even when one exists.
 - `AUTO_INSTALL_TOOLS=0 ./build-iso.sh` to disable auto-install of missing host tools.
 - `KEEP_STAGE=1 ./build-iso.sh` to keep staged build artifacts in `airootfs/` after the run.
+- `CLEAN_WORK=0 ./build-iso.sh` to reuse existing mkarchiso work dir (default is clean build each run).
+- `WORK_DIR=/custom/path ./build-iso.sh` to override the mkarchiso work directory.
 
 ## Test Checklist (VM)
 

@@ -6,12 +6,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 PROTO_DIR="${REPO_ROOT}/mentalOS-prototype"
 PROFILE_DIR="${SCRIPT_DIR}"
 OUT_DIR="${PROFILE_DIR}/out"
-WORK_DIR="${WORK_DIR:-/tmp/archiso-tmp}"
+WORK_DIR="${WORK_DIR:-${PROFILE_DIR}/work}"
 DEFAULT_BINARY_PATH="${PROTO_DIR}/target/release/mentalOS"
 BINARY_PATH="${MENTALOS_BINARY:-${DEFAULT_BINARY_PATH}}"
 USE_EXISTING_BINARY="${USE_EXISTING_BINARY:-1}"
 FORCE_REBUILD="${FORCE_REBUILD:-0}"
 AUTO_INSTALL_TOOLS="${AUTO_INSTALL_TOOLS:-1}"
+CLEAN_WORK="${CLEAN_WORK:-1}"
 INSTALLER_SOURCE_DIR="${REPO_ROOT}/phase1/arch-base"
 INSTALLER_STAGE_DIR="${PROFILE_DIR}/airootfs/opt/mentalos/arch-base"
 KEEP_STAGE="${KEEP_STAGE:-0}"
@@ -101,6 +102,11 @@ cleanup_stage() {
 
 build_iso() {
   mkdir -p "${OUT_DIR}"
+  if [[ "${CLEAN_WORK}" == "1" ]]; then
+    log "Cleaning work directory: ${WORK_DIR}"
+    sudo rm -rf "${WORK_DIR}"
+  fi
+  log "Using work directory: ${WORK_DIR}"
   log "Running mkarchiso"
   sudo mkarchiso -v -w "${WORK_DIR}" -o "${OUT_DIR}" "${PROFILE_DIR}"
 }

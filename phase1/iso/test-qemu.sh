@@ -25,6 +25,23 @@ if ! command -v qemu-system-x86_64 >/dev/null 2>&1; then
   fi
 fi
 
+find_ovmf_unified() {
+  local candidates=(
+    "/usr/share/OVMF/OVMF.fd"
+    "/usr/share/edk2/x64/OVMF.fd"
+    "/usr/share/edk2/x64/OVMF.4m.fd"
+  )
+  local candidate
+
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
 find_ovmf_paths() {
   # Keep OVMF code/vars variants paired (2M with 2M, 4M with 4M).
   local pairs=(
@@ -46,32 +63,53 @@ find_ovmf_paths() {
 }
 
 OVMF_PATHS="$(find_ovmf_paths || true)"
-if [[ -z "${OVMF_PATHS}" && "${AUTO_INSTALL_TOOLS}" == "1" ]] && command -v sudo >/dev/null 2>&1 && command -v pacman >/dev/null 2>&1; then
+OVMF_UNIFIED="$(find_ovmf_unified || true)"
+
+if [[ -z "${OVMF_PATHS}" && -z "${OVMF_UNIFIED}" && "${AUTO_INSTALL_TOOLS}" == "1" ]] && command -v sudo >/dev/null 2>&1 && command -v pacman >/dev/null 2>&1; then
   echo "[test-qemu] OVMF firmware not found; installing edk2-ovmf..."
   sudo pacman -S --needed --noconfirm edk2-ovmf
   OVMF_PATHS="$(find_ovmf_paths || true)"
+  OVMF_UNIFIED="$(find_ovmf_unified || true)"
 fi
 
-if [[ -z "${OVMF_PATHS}" ]]; then
+if [[ -z "${OVMF_PATHS}" && -z "${OVMF_UNIFIED}" ]]; then
   echo "OVMF firmware files not found. Install edk2-ovmf." >&2
   exit 1
 fi
 
-OVMF_CODE="$(printf '%s\n' "${OVMF_PATHS}" | sed -n '1p')"
-OVMF_VARS_TEMPLATE="$(printf '%s\n' "${OVMF_PATHS}" | sed -n '2p')"
-OVMF_VARS_RUNTIME="/tmp/OVMF_VARS_mentalos.fd"
-cp "${OVMF_VARS_TEMPLATE}" "${OVMF_VARS_RUNTIME}"
-
 echo "Booting ${ISO_PATH} in QEMU..."
-qemu-system-x86_64 \
-  -enable-kvm \
-  -m 4096 \
-  -smp 4 \
-  -cpu host \
-  -drive if=pflash,format=raw,readonly=on,file="${OVMF_CODE}" \
-  -drive if=pflash,format=raw,file="${OVMF_VARS_RUNTIME}" \
-  -cdrom "${ISO_PATH}" \
-  -boot d \
-  -netdev user,id=net0 \
-  -device virtio-net-pci,netdev=net0 \
-  -display gtk
+if [[ -n "${OVMF_UNIFIED}" ]]; then
+  echo "[test-qemu] Firmware mode: unified OVMF (${OVMF_UNIFIED})"
+  qemu-system-x86_64 \
+    -enable-kvm \
+    -m 4096 \
+    -smp 4 \
+    -cpu host \
+    -bios "${OVMF_UNIFIED}" \
+    -cdrom "${ISO_PATH}" \
+    -boot order=d,menu=off \
+    -netdev user,id=net0 \
+    -device virtio-net-pci,netdev=net0 \
+    -display gtk
+else
+  OVMF_CODE="$(printf '%s\n' "${OVMF_PATHS}" | sed -n '1p')"
+  OVMF_VARS_TEMPLATE="$(printf '%s\n' "${OVMF_PATHS}" | sed -n '2p')"
+  OVMF_VARS_RUNTIME="/tmp/OVMF_VARS_mentalos.fd"
+  cp "${OVMF_VARS_TEMPLATE}" "${OVMF_VARS_RUNTIME}"
+
+  echo "[test-qemu] Firmware mode: split OVMF"
+  echo "[test-qemu] OVMF code: ${OVMF_CODE}"
+  echo "[test-qemu] OVMF vars template: ${OVMF_VARS_TEMPLATE}"
+  qemu-system-x86_64 \
+    -enable-kvm \
+    -m 4096 \
+    -smp 4 \
+    -cpu host \
+    -drive if=pflash,format=raw,readonly=on,file="${OVMF_CODE}" \
+    -drive if=pflash,format=raw,file="${OVMF_VARS_RUNTIME}" \
+    -cdrom "${ISO_PATH}" \
+    -boot order=d,menu=off \
+    -netdev user,id=net0 \
+    -device virtio-net-pci,netdev=net0 \
+    -display gtk
+fi

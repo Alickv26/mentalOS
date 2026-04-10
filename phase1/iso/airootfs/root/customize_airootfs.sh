@@ -2,18 +2,21 @@
 set -euo pipefail
 
 # Some Arch derivatives ship kernel/initramfs with versioned names (e.g. vmlinuz-5.10-x86_64).
-# Archiso boot entries expect vmlinuz-linux and initramfs-linux.img.
+# Archiso boot entries expect canonical names and mkarchiso copies all vmlinuz-*/initramfs-*.img
+# matches into the EFI FAT image. Use rename (not symlink) to avoid duplicate kernel payloads.
 if [[ ! -e /boot/vmlinuz-linux ]]; then
   first_kernel="$(find /boot -maxdepth 1 -type f -name 'vmlinuz-*' | head -n 1 || true)"
   if [[ -n "${first_kernel}" ]]; then
-    ln -sf "$(basename "${first_kernel}")" /boot/vmlinuz-linux
+    mv "${first_kernel}" /boot/vmlinuz-linux
   fi
 fi
 
 if [[ ! -e /boot/initramfs-linux.img ]]; then
-  first_initramfs="$(find /boot -maxdepth 1 -type f -name 'initramfs-*.img' | head -n 1 || true)"
+  first_initramfs="$(
+    find /boot -maxdepth 1 -type f -name 'initramfs-*.img' ! -name '*fallback*' | head -n 1 || true
+  )"
   if [[ -n "${first_initramfs}" ]]; then
-    ln -sf "$(basename "${first_initramfs}")" /boot/initramfs-linux.img
+    mv "${first_initramfs}" /boot/initramfs-linux.img
   fi
 fi
 

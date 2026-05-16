@@ -1,0 +1,178 @@
+# mentalOS Package List
+# Categorized packages for Phase 1.1 - Minimal Arch Linux Base
+
+## Core System (Required)
+base
+base-devel
+linux
+linux-firmware
+systemd
+systemd-sysvcompat
+
+## Networking (Required - Full WiFi Stack)
+networkmanager
+iwd
+openssl
+ca-certificates
+
+## Boot
+systemd-boot
+efibootmgr
+
+## Display & GPU (auto-detected during install)
+# Base wayland packages (always included)
+wayland
+xorg-xwayland
+mesa
+
+# GPU-specific (detected and installed based on hardware)
+# Intel: mesa-intel-driver, intel-media-driver, intel-ucode
+# AMD: mesa-vulkan-radeon, mesa-vulkan-layer, amd-ucode
+# NVIDIA: nvidia, nvidia-utils, nvidia-settings (proprietary driver)
+
+## Window Manager (Required)
+sway
+swaylock
+swayidle
+wl-clipboard
+grim
+slurp
+wofi
+dmenu
+
+## Audio (auto-detected - included by default for laptop)
+pipewire
+pipewire-pulse
+wireplumber
+pavucontrol
+alsa-utils
+
+## Essential Tools
+git
+curl
+wget
+vim
+nano
+man-db
+man-pages
+texinfo
+which
+findutils
+gawk
+sed
+grep
+coreutils
+util-linux
+procps-ng
+pciutils
+usbutils
+dmidecode
+efibootmgr
+fsarchiver
+parted
+gparted
+ntfs-3g
+exfat-utils
+
+## Development
+rust
+cargo
+rustup
+nodejs
+npm
+python
+python-pip
+python-virtualenv
+go
+
+## Security
+firejail
+sudo
+polkit
+
+## Fonts (Required for UI)
+ttf-dejavu
+noto-fonts
+noto-fonts-cjk
+noto-fonts-emoji
+ttf-jetbrains-mono
+fontconfig
+infinality
+
+## GTK & UI
+gtk4
+adwaita-icon-theme
+adwaita-cursors
+gdk-pixbuf2
+librsvg
+cairo
+pango
+atk
+atkmm
+gtk4
+gtkmm4
+
+## Terminal
+alacritty
+foot
+kitty
+termite
+
+## File Management
+ranger
+fzf
+tree
+bat
+htop
+btop
+neofetch
+duf
+
+## Web & Network Tools
+firefox
+chromium
+w3m
+elinks
+transmission-gtk
+qbittorrent
+
+## Media (Optional)
+imagemagick
+ffmpeg
+gstreamer
+gst-plugins-base
+gst-plugins-good
+gst-plugins-bad
+gst-plugins-ugly
+
+## Documentation
+mandoc
+help2man
+
+## Archive Tools
+tar
+gzip
+bzip2
+xz
+zip
+unzip
+rar
+unrar
+p7zip
+
+## System Monitoring
+htop
+btop
+iotop
+strace
+ltrace
+gdb
+valgrind
+
+## Extras
+xdg-user-dirs
+xdg-utils
+desktop-file-utils
+hicolor-icon-theme
+gtk-update-icon-cache
+update-desktop-database

@@ -1,0 +1,21 @@
+{
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/.svn",
+    "**/.hg",
+    "**/.jj",
+    "**/.sl",
+    "**/.repo",
+    "**/CVS",
+    "**/.DS_Store",
+    "**/Thumbs.db",
+    "**/.classpath",
+    "**/.settings",
+    "**/phase1/iso",
+    "**/airootfs",
+    "**/node_modules",
+    "**/dist",
+    "**/build",
+    "**/target"
+  ]
+}

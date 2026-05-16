@@ -1,4 +1,4 @@
-# Phase 1.1 - Minimal Arch Base
+n# Phase 1.1 - Minimal Arch Base
 
 This directory bootstraps a minimal Arch Linux install that auto-logs into sway and launches `mentalOS`.
 

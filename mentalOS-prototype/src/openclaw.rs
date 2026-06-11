@@ -12,7 +12,6 @@ pub enum Transport {
     Http,
 }
 
-use crate::config::AgentConfig;
 /// Client for OpenClaw (CLI/HTTP) with optional Ollama fallback.
 ///
 /// # Examples
@@ -20,7 +19,6 @@ use crate::config::AgentConfig;
 /// let config = mental_os::Config::load().unwrap();
 /// let client = mental_os::openclaw::OpenClawClient::from_config(&config);
 /// ```
-use std::collections::HashMap;
 
 pub struct OpenClawClient {
     transport: Transport,
@@ -35,7 +33,6 @@ pub struct OpenClawClient {
     fallback_to_ollama: bool,
     provider: String,
     http: reqwest::Client,
-    agents: HashMap<String, AgentConfig>,
 }
 
 #[derive(Debug, Serialize)]
@@ -90,52 +87,23 @@ impl OpenClawClient {
             fallback_to_ollama: config.ai.fallback_to_ollama,
             provider: config.ai.provider.clone(),
             http: reqwest::Client::new(),
-            agents: config.agents.clone(),
         }
     }
 
-    pub fn list_agents(&self) -> Vec<String> {
-        let mut names: Vec<String> = self.agents.keys().cloned().collect();
-        names.sort();
-        names
-    }
-
-    pub fn get_current_provider(&self) -> &str {
-        &self.provider
-    }
-
-    pub fn switch_agent(&mut self, name: &str) -> Result<String> {
-        let name_key = self
-            .agents
-            .keys()
-            .find(|k| k.eq_ignore_ascii_case(name))
-            .ok_or_else(|| MentalOSError::Other(format!("Agent '{}' not found", name)))?
-            .clone();
-
-        let agent = self
-            .agents
-            .get(&name_key)
-            .cloned()
-            .ok_or_else(|| MentalOSError::Other(format!("Agent '{}' not found", name)))?;
-
-        self.provider = agent.provider.clone();
-
-        if let Some(model) = agent.model {
-            self.ollama_model = model; // Assuming model is for ollama or openclaw
-        }
-
-        if let Some(endpoint) = agent.endpoint {
-            if self.provider == "ollama" {
-                self.ollama_endpoint = endpoint;
-            } else {
-                self.endpoint = endpoint;
+    pub fn apply_agent_config(&mut self, config: &crate::config::AgentConfig) {
+        self.provider = config.provider.clone();
+        if let Some(ref model) = config.model {
+            if config.provider == "ollama" {
+                self.ollama_model = model.clone();
             }
         }
-
-        // Also update transport/cli_path if provided, but struct fields are simple here
-        // Ideally we map AgentConfig fields back to OpenClawClient fields
-
-        Ok(format!("Switched to agent: {}", agent.name))
+        if let Some(ref endpoint) = config.endpoint {
+            if config.provider == "ollama" {
+                self.ollama_endpoint = endpoint.clone();
+            } else {
+                self.endpoint = endpoint.clone();
+            }
+        }
     }
 
     pub async fn send_message(&self, message: &str, context: &[Message]) -> Result<String> {
@@ -300,7 +268,7 @@ fn join_url(base: &str, path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AiConfig, OllamaConfig, OpenClawConfig, PathsConfig};
+    use crate::config::{AiConfig, AgentConfig, OllamaConfig, OpenClawConfig, PathsConfig};
     use httpmock::Method::POST;
     use httpmock::MockServer;
 
@@ -371,5 +339,44 @@ mod tests {
         let response = client.send_message("hi", &[]).await.unwrap();
         assert_eq!(response, "ollama reply");
         ollama.assert_async().await;
+    }
+
+    #[test]
+    fn apply_agent_config_updates_provider_and_endpoint() {
+        let config = base_config();
+        let mut client = OpenClawClient::from_config(&config);
+
+        let agent = AgentConfig {
+            name: "Ollama".to_string(),
+            description: None,
+            provider: "ollama".to_string(),
+            model: Some("llama3".to_string()),
+            endpoint: Some("http://localhost:11434".to_string()),
+            executable: None,
+            arguments: None,
+        };
+        client.apply_agent_config(&agent);
+        assert_eq!(client.provider, "ollama");
+        assert_eq!(client.ollama_model, "llama3");
+        assert_eq!(client.ollama_endpoint, "http://localhost:11434");
+    }
+
+    #[test]
+    fn apply_agent_config_switches_to_openclaw() {
+        let config = base_config();
+        let mut client = OpenClawClient::from_config(&config);
+
+        let agent = AgentConfig {
+            name: "OpenClaw-Pro".to_string(),
+            description: None,
+            provider: "openclaw".to_string(),
+            model: None,
+            endpoint: Some("http://127.0.0.1:9999".to_string()),
+            executable: None,
+            arguments: None,
+        };
+        client.apply_agent_config(&agent);
+        assert_eq!(client.provider, "openclaw");
+        assert_eq!(client.endpoint, "http://127.0.0.1:9999");
     }
 }

@@ -1,3 +1,5 @@
+archiso
+mkinitcpio-archiso
 base
 linux
 linux-firmware

@@ -1,5 +1,6 @@
 use gtk4::prelude::*;
 use gtk4::{Application, CssProvider, gdk};
+use mental_os::agent_manager::AgentManager;
 use mental_os::config::{Config, config_path};
 use mental_os::memory::MemoryManager;
 use mental_os::openclaw::OpenClawClient;
@@ -105,10 +106,25 @@ fn main() {
             let task_tracker = TaskTracker::new(workspace_dir.clone());
             let workspace_manager = WorkspaceManager::new(workspace_dir);
 
-            let mut router = CommandRouter::new(openclaw, whitelist, memory, executor)
-                .with_project_handler(project_handler)
-                .with_task_tracker(task_tracker)
-                .with_workspace_manager(workspace_manager);
+            let mut agent_manager = AgentManager::new(
+                config_path()
+                    .ok()
+                    .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                    .unwrap_or_else(|| PathBuf::from("/tmp")),
+            );
+            agent_manager.load_agents(config.agents.clone());
+            let agent_manager = Arc::new(Mutex::new(agent_manager));
+
+            let mut router = CommandRouter::new(
+                openclaw,
+                agent_manager,
+                whitelist,
+                memory,
+                executor,
+            )
+            .with_project_handler(project_handler)
+            .with_task_tracker(task_tracker)
+            .with_workspace_manager(workspace_manager);
 
             while let Some(req) = backend_rx.recv().await {
                 match req {

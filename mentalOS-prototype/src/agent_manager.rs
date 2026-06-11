@@ -217,6 +217,97 @@ mod tests {
         manager.load_agents(agents);
 
         let list = manager.list_agents();
+
         assert_eq!(list, vec!["claude", "ollama", "openclaw"]);
+    }
+
+    #[test]
+    fn add_and_get_agent() {
+        let mut manager = AgentManager::new(PathBuf::from("/tmp"));
+        manager.add_agent("custom".to_string(), test_agent("Custom"));
+
+        let agent = manager.get_agent("custom");
+        assert!(agent.is_some());
+        assert_eq!(agent.unwrap().name, "Custom");
+
+        assert!(manager.get_agent("nonexistent").is_none());
+    }
+
+    #[test]
+    fn remove_agent_fails_for_active() {
+        let mut manager = AgentManager::new(PathBuf::from("/tmp"));
+        let mut agents = HashMap::new();
+        agents.insert("active".to_string(), {
+            let mut cfg = test_agent("ActiveAgent");
+            cfg.executable = Some("default".to_string());
+            cfg
+        });
+        manager.load_agents(agents);
+
+        assert!(!manager.remove_agent("active"));
+        assert!(manager.get_agent("active").is_some());
+    }
+
+    #[test]
+    fn remove_agent_succeeds_for_inactive() {
+        let mut manager = AgentManager::new(PathBuf::from("/tmp"));
+        let mut agents = HashMap::new();
+        agents.insert("primary".to_string(), test_agent("Primary"));
+        agents.insert("secondary".to_string(), test_agent("Secondary"));
+        manager.load_agents(agents);
+        manager.switch_agent("secondary").unwrap();
+
+        assert!(manager.remove_agent("primary"));
+        assert!(manager.get_agent("primary").is_none());
+    }
+
+    #[test]
+    fn get_all_statuses_returns_correct_states() {
+        let mut manager = AgentManager::new(PathBuf::from("/tmp"));
+        let mut agents = HashMap::new();
+        agents.insert("openclaw".to_string(), test_agent("OpenClaw"));
+        agents.insert("ollama".to_string(), test_agent("Ollama"));
+        manager.load_agents(agents);
+
+        let statuses = manager.get_all_statuses();
+        assert_eq!(statuses.get("openclaw"), Some(&AgentStatus::Active));
+        assert_eq!(statuses.get("ollama"), Some(&AgentStatus::Available));
+    }
+
+    #[test]
+    fn is_local_agent_and_executable_path() {
+        let mut manager = AgentManager::new(PathBuf::from("/tmp"));
+        let mut cfg = test_agent("LocalAgent");
+        cfg.executable = Some("/usr/bin/some-tool".to_string());
+        manager.add_agent("local".to_string(), cfg);
+
+        assert!(manager.is_local_agent("local"));
+        assert_eq!(
+            manager.get_executable_path("local"),
+            Some("/usr/bin/some-tool".to_string())
+        );
+        assert!(manager.get_cli_args("local").is_none());
+
+        assert!(!manager.is_local_agent("openclaw"));
+        assert!(manager.get_executable_path("openclaw").is_none());
+    }
+
+    #[test]
+    fn get_agent_status_not_found() {
+        let manager = AgentManager::new(PathBuf::from("/tmp"));
+        assert_eq!(manager.get_agent_status("ghost"), AgentStatus::NotFound);
+    }
+
+    #[test]
+    fn get_agent_status_active_and_available() {
+        let mut manager = AgentManager::new(PathBuf::from("/tmp"));
+        let mut agents = HashMap::new();
+        agents.insert("a1".to_string(), test_agent("A1"));
+        agents.insert("a2".to_string(), test_agent("A2"));
+        manager.load_agents(agents);
+        manager.switch_agent("a1").unwrap();
+
+        assert_eq!(manager.get_agent_status("a1"), AgentStatus::Active);
+        assert_eq!(manager.get_agent_status("a2"), AgentStatus::Available);
     }
 }

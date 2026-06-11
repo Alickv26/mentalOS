@@ -1,3 +1,4 @@
+use crate::agent_manager::AgentManager;
 use crate::error::{MentalOSError, Result};
 use crate::memory::{MemoryManager, Message, MessageAction, Role};
 use crate::openclaw::OpenClawClient;
@@ -190,17 +191,21 @@ impl CommandExecutor for FirejailExecutor {
 /// ```no_run
 /// use mental_os::router::{CommandRouter, FirejailExecutor};
 /// use mental_os::openclaw::OpenClawClient;
+/// use mental_os::agent_manager::AgentManager;
 /// use mental_os::whitelist::WhitelistManager;
 /// use mental_os::memory::MemoryManager;
 /// use std::sync::{Arc, Mutex};
+/// use std::path::PathBuf;
 /// let config = mental_os::Config::load().unwrap();
 /// let openclaw = OpenClawClient::from_config(&config);
+/// let agent_manager = Arc::new(Mutex::new(AgentManager::new(PathBuf::from("/tmp"))));
 /// let whitelist = Arc::new(Mutex::new(WhitelistManager::load("/tmp/whitelist.json".into()).unwrap()));
 /// let memory = Arc::new(Mutex::new(MemoryManager::new("/tmp/workspaces".into())));
-/// let router = CommandRouter::new(openclaw, whitelist, memory, FirejailExecutor::new());
+/// let router = CommandRouter::new(openclaw, agent_manager, whitelist, memory, FirejailExecutor::new());
 /// ```
 pub struct CommandRouter<E: CommandExecutor> {
     openclaw: OpenClawClient,
+    agent_manager: Arc<Mutex<AgentManager>>,
     whitelist: Arc<Mutex<WhitelistManager>>,
     memory: Arc<Mutex<MemoryManager>>,
     executor: E,
@@ -225,12 +230,14 @@ pub enum RouterConfirmation {
 impl<E: CommandExecutor> CommandRouter<E> {
     pub fn new(
         openclaw: OpenClawClient,
+        agent_manager: Arc<Mutex<AgentManager>>,
         whitelist: Arc<Mutex<WhitelistManager>>,
         memory: Arc<Mutex<MemoryManager>>,
         executor: E,
     ) -> Self {
         Self {
             openclaw,
+            agent_manager,
             whitelist,
             memory,
             executor,
@@ -283,8 +290,8 @@ impl<E: CommandExecutor> CommandRouter<E> {
                 description: None,
                 auto_setup: true,
             };
-            let agent = self.openclaw.get_current_provider();
-            match handler.scaffold_project(&request, agent) {
+            let agent = self.get_current_provider();
+            match handler.scaffold_project(&request, &agent) {
                 Ok(response) => {
                     if response.success
                         && let Ok(memory) = self.memory.lock()
@@ -319,15 +326,34 @@ impl<E: CommandExecutor> CommandRouter<E> {
     }
 
     pub fn list_agents(&self) -> Vec<String> {
-        self.openclaw.list_agents()
+        let manager = self
+            .agent_manager
+            .lock()
+            .expect("AgentManager lock poisoned");
+        manager.list_agents()
     }
 
     pub fn get_current_provider(&self) -> String {
-        self.openclaw.get_current_provider().to_string()
+        let manager = self
+            .agent_manager
+            .lock()
+            .expect("AgentManager lock poisoned");
+        manager.get_active_agent_name().to_string()
     }
 
     pub fn switch_agent(&mut self, name: &str) -> Result<String> {
-        self.openclaw.switch_agent(name)
+        let agent_config = {
+            let mut manager = self
+                .agent_manager
+                .lock()
+                .expect("AgentManager lock poisoned");
+            manager.switch_agent(name)?;
+            manager.get_active_agent().cloned()
+        };
+        if let Some(config) = agent_config {
+            self.openclaw.apply_agent_config(&config);
+        }
+        Ok(format!("Switched to agent: {}", name))
     }
 
     pub fn run_project_command(
@@ -357,7 +383,7 @@ impl<E: CommandExecutor> CommandRouter<E> {
     ) -> Result<RouterResponse> {
         // Intercept agent switching commands
         if let Some(target) = parse_switch_target(input) {
-            match self.openclaw.switch_agent(target) {
+            match self.switch_agent(target) {
                 Ok(msg) => {
                     return Ok(RouterResponse {
                         message: msg,
@@ -366,7 +392,7 @@ impl<E: CommandExecutor> CommandRouter<E> {
                     });
                 }
                 Err(_) => {
-                    let agents = self.openclaw.list_agents();
+                    let agents = self.list_agents();
                     let msg = format!(
                         "Agent '{}' not found. Available agents: {}",
                         target,
@@ -1029,7 +1055,11 @@ mod tests {
         whitelist.add_exact("echo hello");
         let whitelist = Arc::new(Mutex::new(whitelist));
 
-        let mut router = CommandRouter::new(openclaw, whitelist, memory, NoopExecutor);
+        let mut agent_manager = AgentManager::new(PathBuf::from("/tmp"));
+        agent_manager.load_agents(config.agents.clone());
+        let agent_manager = Arc::new(Mutex::new(agent_manager));
+
+        let mut router = CommandRouter::new(openclaw, agent_manager, whitelist, memory, NoopExecutor);
         let result = router
             .handle_input("demo", "general", "hi", 5)
             .await

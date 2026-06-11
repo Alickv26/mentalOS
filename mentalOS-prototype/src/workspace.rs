@@ -179,4 +179,57 @@ mod tests {
         assert!(path.exists());
         assert!(path.join(".mentalOS-project.json").exists());
     }
+
+    #[test]
+    fn list_workspaces_returns_empty_for_nonexistent_dir() {
+        let manager = WorkspaceManager::new(PathBuf::from("/tmp/nonexistent-mentalos-test"));
+        let workspaces = manager.list_workspaces().unwrap();
+        assert!(workspaces.is_empty());
+    }
+
+    #[test]
+    fn create_workspace_rejects_empty_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
+        assert!(manager.create_workspace("", "agent").is_err());
+    }
+
+    #[test]
+    fn update_metadata_creates_and_reads_back() {
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_dir = temp_dir.path().join("test-proj");
+        fs::create_dir_all(&workspace_dir).unwrap();
+
+        let manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
+        let commands = ProjectCommands {
+            setup: Some("npm install".to_string()),
+            run: Some("npm start".to_string()),
+            test: Some("npm test".to_string()),
+        };
+        manager
+            .update_metadata(
+                &workspace_dir,
+                Some("javascript".to_string()),
+                Some("react".to_string()),
+                Some("A test project".to_string()),
+                commands.clone(),
+            )
+            .unwrap();
+
+        let metadata = manager.load_metadata(&workspace_dir).unwrap().unwrap();
+        assert_eq!(metadata.language, Some("javascript".to_string()));
+        assert_eq!(metadata.framework, Some("react".to_string()));
+        assert_eq!(metadata.commands.setup, Some("npm install".to_string()));
+        assert_eq!(metadata.commands.run, Some("npm start".to_string()));
+    }
+
+    #[test]
+    fn load_metadata_returns_none_for_missing_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
+        let result = manager
+            .load_metadata(&temp_dir.path().join("nonexistent"))
+            .unwrap();
+        assert!(result.is_none());
+    }
 }

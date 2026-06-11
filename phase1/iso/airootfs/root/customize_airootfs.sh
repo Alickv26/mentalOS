@@ -26,6 +26,9 @@ if [[ -e /boot/initramfs-linux.img ]]; then
   find /boot -maxdepth 1 -type f -name 'initramfs-*.img' ! -name 'initramfs-linux.img' -delete
 fi
 
+# Unlock root with a known password for emergency shell access
+printf 'root:mentalos\n' | chpasswd
+
 useradd -m -G wheel -s /bin/bash user || true
 mkdir -p /etc/sudoers.d
 printf '%%wheel ALL=(ALL:ALL) ALL\n' > /etc/sudoers.d/10-wheel

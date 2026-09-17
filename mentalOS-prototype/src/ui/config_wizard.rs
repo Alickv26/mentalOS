@@ -1,195 +1,478 @@
-use crate::config::{Config, config_path};
+//! First-run setup wizard for mentalOS configuration.
+//!
+//! Guides the user through:
+//! 1. Choosing an AI provider (OpenClaw, Ollama, DeepSeek, OpenCode Zen)
+//! 2. Configuring provider-specific settings (endpoints, API keys, models)
+//! 3. Setting up the workspace directory
+//! 4. Saving the configuration to disk
+
+use gtk4::glib;
 use gtk4::prelude::*;
-use gtk4::{Box, Button, CheckButton, Entry, Label, Orientation, Window};
-use std::fs;
-use std::path::PathBuf;
+use gtk4::{
+    Box, Button, DropDown, Entry, Label, Orientation, SpinButton, StringList, Switch, Window,
+};
+use log::{info, warn};
+
+use crate::config::{Config, OpenClawConfig, OllamaConfig, DeepSeekConfig, OpenCodeZenConfig, PathsConfig, AiConfig};
+
+/// Provider names displayed in the dropdown.
+const PROVIDER_LABELS: &[&str] = &[
+    "OpenClaw (Local Gateway)",
+    "Ollama (Local Models)",
+    "DeepSeek (Cloud API)",
+    "OpenCode Zen (Multi-Model Gateway)",
+];
+
+/// Internal provider identifiers matching config keys.
+const PROVIDER_IDS: &[&str] = &["openclaw", "ollama", "deepseek", "zen"];
 
 pub struct ConfigWizard;
 
 impl ConfigWizard {
-    pub fn show<F>(parent: &impl IsA<gtk4::Window>, on_complete: F)
-    where
-        F: Fn() + Clone + 'static,
-    {
-        let dialog = Window::builder()
-            .title("Welcome to mentalOS")
-            .modal(true)
+    /// Show the configuration wizard as a modal dialog.
+    ///
+    /// `on_complete` is called after the user finishes the wizard and the
+    /// configuration has been saved to disk.
+    pub fn show<F: FnOnce() + 'static>(parent: &Window, on_complete: F) {
+        let dialog = gtk4::Dialog::builder()
+            .title("mentalOS Setup")
             .transient_for(parent)
-            .default_width(520)
-            .default_height(420)
-            .resizable(false)
+            .modal(true)
+            .default_width(480)
+            .default_height(520)
             .build();
-        dialog.add_css_class("launcher-window");
 
-        let root = Box::new(Orientation::Vertical, 10);
-        root.set_margin_top(16);
-        root.set_margin_bottom(16);
-        root.set_margin_start(16);
-        root.set_margin_end(16);
+        let content_area = dialog.content_area();
 
-        let title = Label::new(Some("First-run setup"));
-        title.set_halign(gtk4::Align::Start);
-        title.add_css_class("app-bar-title");
-        root.append(&title);
+        // ── Title ──
+        let title = Label::new(Some("Welcome to mentalOS"));
+        title.add_css_class("wizard-title");
+        content_area.append(&title);
 
-        let subtitle = Label::new(Some(
-            "Configure provider, model, workspace and privacy defaults.",
-        ));
-        subtitle.set_halign(gtk4::Align::Start);
-        subtitle.set_wrap(true);
-        subtitle.add_css_class("app-bar-stats");
-        root.append(&subtitle);
+        let subtitle = Label::new(Some("Configure your AI provider to get started."));
+        subtitle.add_css_class("wizard-subtitle");
+        content_area.append(&subtitle);
 
-        let provider_label = Label::new(Some("AI Provider"));
-        provider_label.set_halign(gtk4::Align::Start);
-        root.append(&provider_label);
+        // ── Provider Selection ──
+        let provider_section = Label::new(Some("AI Provider"));
+        provider_section.add_css_class("wizard-section-label");
+        content_area.append(&provider_section);
 
-        let provider_model = gtk4::StringList::new(&["openclaw", "ollama"]);
-        let provider_dd = gtk4::DropDown::builder().model(&provider_model).build();
-        provider_dd.set_selected(0);
-        root.append(&provider_dd);
-
-        let model_label = Label::new(Some("Model"));
-        model_label.set_halign(gtk4::Align::Start);
-        root.append(&model_label);
-
-        let model_entry = Entry::builder()
-            .placeholder_text("phi3:mini")
-            .text("phi3:mini")
+        let provider_model = StringList::new(PROVIDER_LABELS);
+        let provider_dropdown = DropDown::builder()
+            .model(&provider_model)
+            .selected(0)
             .build();
-        root.append(&model_entry);
+        provider_dropdown.add_css_class("wizard-dropdown");
+        content_area.append(&provider_dropdown);
 
-        let workspace_label = Label::new(Some("Workspace Directory"));
+        // ── Dynamic Provider Config Container ──
+        let config_container = Box::new(Orientation::Vertical, 8);
+        config_container.add_css_class("wizard-config-container");
+        content_area.append(&config_container);
+
+        // Pre-create all provider config widgets
+        let openclaw_widgets = OpenClawWidgets::new();
+        let ollama_widgets = OllamaWidgets::new();
+        let deepseek_widgets = DeepSeekWidgets::new();
+        let zen_widgets = ZenWidgets::new();
+
+        // Add all widgets but only show the first one initially
+        config_container.append(&openclaw_widgets.container);
+        config_container.append(&ollama_widgets.container);
+        config_container.append(&deepseek_widgets.container);
+        config_container.append(&zen_widgets.container);
+
+        // Show only the selected provider's config
+        ollama_widgets.container.set_visible(false);
+        deepseek_widgets.container.set_visible(false);
+        zen_widgets.container.set_visible(false);
+
+        let oc_ref = openclaw_widgets.container.clone();
+        let ol_ref = ollama_widgets.container.clone();
+        let ds_ref = deepseek_widgets.container.clone();
+        let zen_ref = zen_widgets.container.clone();
+
+        provider_dropdown.connect_selected_notify(move |dropdown| {
+            let idx = dropdown.selected();
+            oc_ref.set_visible(idx == 0);
+            ol_ref.set_visible(idx == 1);
+            ds_ref.set_visible(idx == 2);
+            zen_ref.set_visible(idx == 3);
+        });
+
+        // ── Workspace ──
+        let workspace_section = Label::new(Some("Workspace"));
+        workspace_section.add_css_class("wizard-section-label");
+        content_area.append(&workspace_section);
+
+        let workspace_label = Label::new(Some("Workspace directory:"));
         workspace_label.set_halign(gtk4::Align::Start);
-        root.append(&workspace_label);
+        content_area.append(&workspace_label);
 
         let workspace_entry = Entry::builder()
-            .placeholder_text("~/workspaces")
             .text("~/workspaces")
+            .hexpand(true)
             .build();
-        root.append(&workspace_entry);
+        content_area.append(&workspace_entry);
 
-        let token_label = Label::new(Some("OpenClaw Token (optional)"));
-        token_label.set_halign(gtk4::Align::Start);
-        root.append(&token_label);
+        // ── Buttons ──
+        let btn_box = Box::new(Orientation::Horizontal, 8);
+        btn_box.set_halign(gtk4::Align::End);
+        btn_box.set_margin_top(12);
 
-        let token_entry = Entry::builder().placeholder_text("Bearer token").build();
-        token_entry.set_visibility(false);
-        root.append(&token_entry);
+        let save_btn = Button::builder()
+            .label("Save & Start")
+            .css_classes(["suggested-action", "pill-button"])
+            .build();
+        btn_box.append(&save_btn);
+        content_area.append(&btn_box);
 
-        let fallback_check = CheckButton::with_label("Fallback to Ollama if OpenClaw fails");
-        fallback_check.set_active(true);
-        root.append(&fallback_check);
-
-        let autostart_check = CheckButton::with_label("Auto-start OpenClaw gateway (HTTP mode)");
-        autostart_check.set_active(true);
-        root.append(&autostart_check);
-
-        let local_only_check = CheckButton::with_label("Local-only memory (no remote sync)");
-        local_only_check.set_active(true);
-        root.append(&local_only_check);
-
-        let status_label = Label::new(None);
-        status_label.set_halign(gtk4::Align::Start);
-        status_label.add_css_class("welcome-hint");
-        root.append(&status_label);
-
-        let actions = Box::new(Orientation::Horizontal, 8);
-        actions.set_halign(gtk4::Align::End);
-
-        let quit_btn = Button::with_label("Quit");
-        let save_btn = Button::with_label("Save & Continue");
-        save_btn.add_css_class("create-button");
-
-        actions.append(&quit_btn);
-        actions.append(&save_btn);
-        root.append(&actions);
-
-        dialog.set_child(Some(&root));
-
-        let parent_window = parent.clone().upcast::<gtk4::Window>();
-        let dialog_for_quit = dialog.clone();
-        quit_btn.connect_clicked(move |_| {
-            dialog_for_quit.close();
-            parent_window.close();
-        });
-
-        let dialog_for_save = dialog.clone();
-        let status_for_save = status_label.clone();
-        let provider_for_save = provider_dd.clone();
-        let model_for_save = model_entry.clone();
-        let workspace_for_save = workspace_entry.clone();
-        let token_for_save = token_entry.clone();
-        let fallback_for_save = fallback_check.clone();
-        let autostart_for_save = autostart_check.clone();
-        let local_only_for_save = local_only_check.clone();
-        let on_complete_cb = on_complete.clone();
+        // ── Save handler ──
+        let config_for_save = Config::default();
+        let dialog_ref = dialog.clone();
 
         save_btn.connect_clicked(move |_| {
-            let provider = selected_provider(&provider_for_save);
-            let mut config = Config::default();
-            config.ai.provider = provider.clone();
-            config.ai.model = model_for_save.text().to_string();
-            config.ai.fallback_to_ollama = fallback_for_save.is_active();
-            config.paths.workspace_dir = workspace_for_save.text().to_string();
-            config.ollama.model = model_for_save.text().to_string();
-            config.openclaw.token = token_for_save.text().to_string();
-            config.openclaw.auto_start = autostart_for_save.is_active();
-            if provider == "openclaw" {
-                config.openclaw.transport = "http".to_string();
+            let provider_idx = provider_dropdown.selected() as usize;
+            let provider_id = PROVIDER_IDS.get(provider_idx).unwrap_or(&"openclaw");
+
+            let mut config = config_for_save.clone();
+
+            // Set AI provider
+            config.ai.provider = provider_id.to_string();
+
+            // Set provider-specific config
+            match *provider_id {
+                "openclaw" => {
+                    config.openclaw.endpoint = openclaw_widgets.endpoint_entry.text().to_string();
+                    config.openclaw.transport = if openclaw_widgets.transport_switch.is_active() {
+                        "http".to_string()
+                    } else {
+                        "cli".to_string()
+                    };
+                    config.openclaw.token = openclaw_widgets.token_entry.text().to_string();
+                    config.openclaw.auto_start = openclaw_widgets.auto_start_switch.is_active();
+                    config.openclaw.cli_path = openclaw_widgets.cli_path_entry.text().to_string();
+                }
+                "ollama" => {
+                    config.ollama.endpoint = ollama_widgets.endpoint_entry.text().to_string();
+                    config.ollama.model = ollama_widgets.model_entry.text().to_string();
+                }
+                "deepseek" => {
+                    config.deepseek.api_key = deepseek_widgets.api_key_entry.text().to_string();
+                    config.deepseek.model = deepseek_widgets.model_entry.text().to_string();
+                    config.deepseek.endpoint = deepseek_widgets.endpoint_entry.text().to_string();
+                    config.deepseek.thinking_mode = deepseek_widgets.thinking_switch.is_active();
+                    if let Ok(temp) = deepseek_widgets.temperature_spin.value().to_string().parse::<f32>() {
+                        config.deepseek.temperature = temp;
+                    }
+                }
+                "zen" => {
+                    config.zen.api_key = zen_widgets.api_key_entry.text().to_string();
+                    config.zen.model = zen_widgets.model_entry.text().to_string();
+                    config.zen.endpoint = zen_widgets.endpoint_entry.text().to_string();
+                }
+                _ => {}
             }
 
-            match config
-                .save()
-                .and_then(|_| save_privacy(local_only_for_save.is_active()))
-            {
-                Ok(_) => {
-                    on_complete_cb();
-                    dialog_for_save.close();
+            // Set workspace
+            config.paths.workspace_dir = workspace_entry.text().to_string();
+
+            // Save config
+            match config.save() {
+                Ok(path) => {
+                    info!("Configuration saved to {}", path.display());
+                    dialog_ref.close();
+                    on_complete();
                 }
-                Err(err) => {
-                    status_for_save.set_text(&format!("Failed to save config: {}", err));
+                Err(e) => {
+                    warn!("Failed to save configuration: {}", e);
                 }
             }
         });
-
-        let key_ctrl = gtk4::EventControllerKey::new();
-        let d = dialog.clone();
-        let parent_for_escape = parent.clone().upcast::<gtk4::Window>();
-        key_ctrl.connect_key_pressed(move |_, key, _, _| {
-            if key == gtk4::gdk::Key::Escape {
-                d.close();
-                parent_for_escape.close();
-                return gtk4::glib::Propagation::Stop;
-            }
-            gtk4::glib::Propagation::Proceed
-        });
-        dialog.add_controller(key_ctrl);
 
         dialog.present();
     }
 }
 
-fn selected_provider(dd: &gtk4::DropDown) -> String {
-    dd.selected_item()
-        .and_then(|i| i.downcast::<gtk4::StringObject>().ok())
-        .map(|s| s.string().to_string())
-        .unwrap_or_else(|| "openclaw".to_string())
+// ── OpenClaw Config Widgets ────────────────────────────────────
+
+struct OpenClawWidgets {
+    container: Box,
+    endpoint_entry: Entry,
+    cli_path_entry: Entry,
+    token_entry: Entry,
+    transport_switch: Switch,
+    auto_start_switch: Switch,
 }
 
-fn save_privacy(local_only: bool) -> crate::Result<()> {
-    let config_file = config_path()?;
-    let config_dir = config_file
-        .parent()
-        .map(PathBuf::from)
-        .ok_or_else(|| crate::MentalOSError::ConfigInvalid("No config directory".to_string()))?;
-    fs::create_dir_all(&config_dir)?;
+impl OpenClawWidgets {
+    fn new() -> Self {
+        let container = Box::new(Orientation::Vertical, 6);
 
-    let privacy_path = config_dir.join("privacy.toml");
-    let content = format!(
-        "# mentalOS privacy settings\nlocal_only = {}\nallow_sync = {}\n",
-        local_only, !local_only
-    );
-    fs::write(privacy_path, content)?;
-    Ok(())
+        let endpoint_label = Label::new(Some("Gateway endpoint:"));
+        endpoint_label.set_halign(gtk4::Align::Start);
+        container.append(&endpoint_label);
+
+        let endpoint_entry = Entry::builder()
+            .text("http://127.0.0.1:18789")
+            .hexpand(true)
+            .build();
+        container.append(&endpoint_entry);
+
+        let cli_path_label = Label::new(Some("CLI path:"));
+        cli_path_label.set_halign(gtk4::Align::Start);
+        container.append(&cli_path_label);
+
+        let cli_path_entry = Entry::builder()
+            .text("openclaw")
+            .hexpand(true)
+            .build();
+        container.append(&cli_path_entry);
+
+        let token_label = Label::new(Some("OpenClaw Token:"));
+        token_label.set_halign(gtk4::Align::Start);
+        container.append(&token_label);
+
+        let token_entry = Entry::builder()
+            .hexpand(true)
+            .input_purpose(gtk4::InputPurpose::Password)
+            .build();
+        container.append(&token_entry);
+
+        // Transport switch (HTTP vs CLI)
+        let transport_box = Box::new(Orientation::Horizontal, 8);
+        let transport_label = Label::new(Some("Use HTTP transport"));
+        transport_label.set_hexpand(true);
+        transport_label.set_halign(gtk4::Align::Start);
+        let transport_switch = Switch::builder().active(false).build();
+        transport_box.append(&transport_label);
+        transport_box.append(&transport_switch);
+        container.append(&transport_box);
+
+        // Auto-start switch
+        let auto_start_box = Box::new(Orientation::Horizontal, 8);
+        let auto_start_label = Label::new(Some("Auto-start OpenClaw gateway"));
+        auto_start_label.set_hexpand(true);
+        auto_start_label.set_halign(gtk4::Align::Start);
+        let auto_start_switch = Switch::builder().active(false).build();
+        auto_start_box.append(&auto_start_label);
+        auto_start_box.append(&auto_start_switch);
+        container.append(&auto_start_box);
+
+        // Fallback hint
+        let fallback_hint = Label::new(Some("Fallback to Ollama if OpenClaw fails"));
+        fallback_hint.add_css_class("wizard-hint");
+        fallback_hint.set_halign(gtk4::Align::Start);
+        container.append(&fallback_hint);
+
+        Self {
+            container,
+            endpoint_entry,
+            cli_path_entry,
+            token_entry,
+            transport_switch,
+            auto_start_switch,
+        }
+    }
+}
+
+// ── Ollama Config Widgets ──────────────────────────────────────
+
+struct OllamaWidgets {
+    container: Box,
+    endpoint_entry: Entry,
+    model_entry: Entry,
+}
+
+impl OllamaWidgets {
+    fn new() -> Self {
+        let container = Box::new(Orientation::Vertical, 6);
+
+        let endpoint_label = Label::new(Some("Ollama endpoint:"));
+        endpoint_label.set_halign(gtk4::Align::Start);
+        container.append(&endpoint_label);
+
+        let endpoint_entry = Entry::builder()
+            .text("http://127.0.0.1:11434")
+            .hexpand(true)
+            .build();
+        container.append(&endpoint_entry);
+
+        let model_label = Label::new(Some("Model:"));
+        model_label.set_halign(gtk4::Align::Start);
+        container.append(&model_label);
+
+        let model_entry = Entry::builder()
+            .text("phi3:mini")
+            .hexpand(true)
+            .build();
+        container.append(&model_entry);
+
+        let hint = Label::new(Some("Make sure Ollama is running locally before starting."));
+        hint.add_css_class("wizard-hint");
+        hint.set_halign(gtk4::Align::Start);
+        container.append(&hint);
+
+        Self {
+            container,
+            endpoint_entry,
+            model_entry,
+        }
+    }
+}
+
+// ── DeepSeek Config Widgets ────────────────────────────────────
+
+struct DeepSeekWidgets {
+    container: Box,
+    api_key_entry: Entry,
+    model_entry: Entry,
+    endpoint_entry: Entry,
+    thinking_switch: Switch,
+    temperature_spin: SpinButton,
+}
+
+impl DeepSeekWidgets {
+    fn new() -> Self {
+        let container = Box::new(Orientation::Vertical, 6);
+
+        let api_key_label = Label::new(Some("API Key:"));
+        api_key_label.set_halign(gtk4::Align::Start);
+        container.append(&api_key_label);
+
+        let api_key_entry = Entry::builder()
+            .hexpand(true)
+            .input_purpose(gtk4::InputPurpose::Password)
+            .visibility(false)
+            .build();
+        container.append(&api_key_entry);
+
+        let privacy_hint = Label::new(Some("Your API key is stored locally and never shared."));
+        privacy_hint.add_css_class("wizard-hint");
+        privacy_hint.set_halign(gtk4::Align::Start);
+        container.append(&privacy_hint);
+
+        let model_label = Label::new(Some("Model:"));
+        model_label.set_halign(gtk4::Align::Start);
+        container.append(&model_label);
+
+        let model_entry = Entry::builder()
+            .text("deepseek-v4-pro")
+            .hexpand(true)
+            .build();
+        container.append(&model_entry);
+
+        let model_hint = Label::new(Some("Available: deepseek-v4-flash, deepseek-v4-pro"));
+        model_hint.add_css_class("wizard-hint");
+        model_hint.set_halign(gtk4::Align::Start);
+        container.append(&model_hint);
+
+        let endpoint_label = Label::new(Some("Endpoint:"));
+        endpoint_label.set_halign(gtk4::Align::Start);
+        container.append(&endpoint_label);
+
+        let endpoint_entry = Entry::builder()
+            .text("https://api.deepseek.com")
+            .hexpand(true)
+            .build();
+        container.append(&endpoint_entry);
+
+        // Thinking mode switch
+        let thinking_box = Box::new(Orientation::Horizontal, 8);
+        let thinking_label = Label::new(Some("Thinking mode (reasoning_content)"));
+        thinking_label.set_hexpand(true);
+        thinking_label.set_halign(gtk4::Align::Start);
+        let thinking_switch = Switch::builder().active(true).build();
+        thinking_box.append(&thinking_label);
+        thinking_box.append(&thinking_switch);
+        container.append(&thinking_box);
+
+        // Temperature
+        let temp_box = Box::new(Orientation::Horizontal, 8);
+        let temp_label = Label::new(Some("Temperature:"));
+        temp_label.set_halign(gtk4::Align::Start);
+        let temperature_spin = SpinButton::with_range(0.0, 2.0, 0.1);
+        temperature_spin.set_value(0.7);
+        temp_box.append(&temp_label);
+        temp_box.append(&temperature_spin);
+        container.append(&temp_box);
+
+        Self {
+            container,
+            api_key_entry,
+            model_entry,
+            endpoint_entry,
+            thinking_switch,
+            temperature_spin,
+        }
+    }
+}
+
+// ── OpenCode Zen Config Widgets ────────────────────────────────
+
+struct ZenWidgets {
+    container: Box,
+    api_key_entry: Entry,
+    model_entry: Entry,
+    endpoint_entry: Entry,
+}
+
+impl ZenWidgets {
+    fn new() -> Self {
+        let container = Box::new(Orientation::Vertical, 6);
+
+        let api_key_label = Label::new(Some("API Key:"));
+        api_key_label.set_halign(gtk4::Align::Start);
+        container.append(&api_key_label);
+
+        let api_key_entry = Entry::builder()
+            .hexpand(true)
+            .input_purpose(gtk4::InputPurpose::Password)
+            .visibility(false)
+            .build();
+        container.append(&api_key_entry);
+
+        let privacy_hint = Label::new(Some("Your API key is stored locally and never shared."));
+        privacy_hint.add_css_class("wizard-hint");
+        privacy_hint.set_halign(gtk4::Align::Start);
+        container.append(&privacy_hint);
+
+        let model_label = Label::new(Some("Model:"));
+        model_label.set_halign(gtk4::Align::Start);
+        container.append(&model_label);
+
+        let model_entry = Entry::builder()
+            .text("deepseek-v4-pro")
+            .hexpand(true)
+            .build();
+        container.append(&model_entry);
+
+        let model_hint = Label::new(Some("50+ models available. 7 free models included."));
+        model_hint.add_css_class("wizard-hint");
+        model_hint.set_halign(gtk4::Align::Start);
+        container.append(&model_hint);
+
+        let endpoint_label = Label::new(Some("Endpoint:"));
+        endpoint_label.set_halign(gtk4::Align::Start);
+        container.append(&endpoint_label);
+
+        let endpoint_entry = Entry::builder()
+            .text("https://opencode.ai/zen/v1")
+            .hexpand(true)
+            .build();
+        container.append(&endpoint_entry);
+
+        let format_hint = Label::new(Some("Auto-detects API format (Chat Completions, Anthropic, Responses)"));
+        format_hint.add_css_class("wizard-hint");
+        format_hint.set_halign(gtk4::Align::Start);
+        container.append(&format_hint);
+
+        Self {
+            container,
+            api_key_entry,
+            model_entry,
+            endpoint_entry,
+        }
+    }
 }

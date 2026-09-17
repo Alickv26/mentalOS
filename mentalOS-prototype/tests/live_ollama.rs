@@ -1,4 +1,5 @@
-use mental_os::openclaw::OpenClawClient;
+use mental_os::providers::ollama::OllamaProvider;
+use mental_os::providers::AiProvider;
 
 #[tokio::test]
 async fn live_ollama() {
@@ -7,12 +8,11 @@ async fn live_ollama() {
         return;
     }
 
-    let mut config = mental_os::Config::load().expect("config missing");
-    config.ai.provider = "ollama".to_string();
-    let client = OpenClawClient::from_config(&config);
+    let config = mental_os::Config::load().expect("config missing");
+    let client = OllamaProvider::from_config(&config).expect("create ollama provider");
+
     let response = client
         .send_message("Say hello in one sentence.", &[])
-        .await
         .expect("ollama request failed");
 
     assert!(!response.trim().is_empty());

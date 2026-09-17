@@ -44,7 +44,7 @@ const STEPS: [TutorialStep; 5] = [
     },
     TutorialStep {
         title: "Agent Control",
-        body: "Use the agent selector near the input to switch between available providers (for example OpenClaw and Ollama). Status and notifications appear in the top bar.",
+        body: "Use the agent selector near the input to switch between available providers (OpenClaw, Ollama, DeepSeek, or OpenCode Zen). Status and notifications appear in the top bar.",
     },
     TutorialStep {
         title: "Accessibility",

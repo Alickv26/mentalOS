@@ -1,13 +1,12 @@
 use httpmock::Method::POST;
 use httpmock::MockServer;
-use mental_os::agent_manager::AgentManager;
-use mental_os::config::{AiConfig, OllamaConfig, OpenClawConfig, PathsConfig};
+use mental_os::config::{AiConfig, DeepSeekConfig, OllamaConfig, OpenClawConfig, OpenCodeZenConfig, PathsConfig};
 use mental_os::memory::MemoryManager;
 use mental_os::openclaw::OpenClawClient;
+use mental_os::providers::AiProvider;
 use mental_os::router::{CommandExecutor, CommandOutput, CommandRouter};
 use mental_os::whitelist::WhitelistManager;
 use mental_os::workspace::WorkspaceManager;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
@@ -63,21 +62,20 @@ async fn components_work_together() {
             ..OpenClawConfig::default()
         },
         ollama: OllamaConfig::default(),
+        deepseek: DeepSeekConfig::default(),
+        zen: OpenCodeZenConfig::default(),
         paths: PathsConfig::default(),
         agents: std::collections::HashMap::new(),
     };
     config.openclaw.endpoint = server.base_url();
     config.ai.fallback_to_ollama = false;
 
-    let openclaw = OpenClawClient::from_config(&config);
-    let mut agent_manager = AgentManager::new(PathBuf::from("/tmp"));
-    agent_manager.load_agents(config.agents.clone());
-    let agent_manager = Arc::new(Mutex::new(agent_manager));
-    let mut router = CommandRouter::new(openclaw, agent_manager, whitelist, memory, NoopExecutor);
+    let openclaw = OpenClawClient::from_config(&config).unwrap();
+    let openclaw = Box::new(openclaw) as Box<dyn AiProvider>;
+    let mut router = CommandRouter::new(openclaw, whitelist, memory, NoopExecutor);
 
     let result = router
         .handle_input("demo", "general", "hi", 5)
-        .await
         .unwrap();
 
     assert_eq!(result.outputs.len(), 1);

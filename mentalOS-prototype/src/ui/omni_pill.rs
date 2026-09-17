@@ -78,7 +78,7 @@ impl OmniPill {
         agent_selector.update_property(&[
             gtk4::accessible::Property::Label("Agent selector"),
             gtk4::accessible::Property::Description(
-                "Choose the active AI provider, such as OpenClaw or Ollama.",
+                "Choose the active AI provider (OpenClaw, Ollama, DeepSeek, or OpenCode Zen).",
             ),
         ]);
         container.append(&agent_selector);

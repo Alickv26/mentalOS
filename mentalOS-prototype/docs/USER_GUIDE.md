@@ -1,119 +1,153 @@
 # mentalOS User Guide
 
-## Start the App
+## Getting Started
 
-1. Open a terminal in `mentalOS-prototype`.
-2. Run `cargo run`.
-3. Type into the prompt and press Enter.
+### First Run
 
-Optional structured logs:
+When you launch mentalOS for the first time, a setup wizard will guide you through configuring your AI provider. Choose from:
 
-- `MENTALOS_LOG_FORMAT=json cargo run`
+1. **OpenClaw (Local Gateway)** — A local AI gateway that runs on your machine. Best for privacy and offline use.
+2. **Ollama (Local Models)** — Run AI models locally using Ollama. Requires Ollama to be installed and running.
+3. **DeepSeek (Cloud API)** — A powerful cloud-based AI provider with OpenAI-compatible API. Requires an API key.
+4. **OpenCode Zen (Multi-Model Gateway)** — Access 50+ models from a single gateway. 7 free models included. Requires an API key.
 
-Default file logs:
+### Choosing a Provider
 
-- `~/.local/state/mentalOS/logs/mentalOS.log`
+| Provider | Privacy | Cost | Setup | Model Variety |
+|----------|---------|------|-------|---------------|
+| OpenClaw | Full (local) | Free | Install OpenClaw | Limited |
+| Ollama | Full (local) | Free | Install Ollama | Many (local) |
+| DeepSeek | Cloud | $0.14/1M tokens | API key | DeepSeek models |
+| Zen | Cloud | Free tier + paid | API key | 50+ models |
 
-## First-Run Wizard
+## Configuration
 
-If `~/.config/mentalOS/config.toml` does not exist, a setup wizard opens.
+Your configuration is stored at `~/.config/mentalOS/config.toml`.
 
-Wizard fields:
+### Switching Providers
 
-- provider (`openclaw` or `ollama`)
-- model (default `phi3:mini`)
-- workspace directory
-- OpenClaw token (optional)
-- fallback and privacy toggles
+Edit the `provider` field in the `[ai]` section:
 
-## Daily Workflow
+```toml
+[ai]
+provider = "deepseek"  # or "openclaw", "ollama", "zen"
+```
 
-- Ask requests in natural language in the input field.
-- The app shows status/progress while backend work is in-flight.
-- AI and system messages appear in chat history.
-- Chat message headers include role and local time (`Role · HH:MM`).
-- Command outputs are rendered in chat.
+Then restart mentalOS for the change to take effect.
 
-## Safety and Approvals
+### DeepSeek Configuration
 
-- Non-whitelisted commands trigger approval dialogs.
-- You can approve once or deny.
-- Emergency stop is always available from the app bar and shortcut.
+```toml
+[deepseek]
+api_key = "sk-your-key-here"
+model = "deepseek-v4-pro"  # or "deepseek-v4-flash" for faster/cheaper
+thinking_mode = true  # Includes reasoning in responses
+max_tokens = 4096
+temperature = 0.7
+```
 
-## Agent Switching
+Get your API key at [https://platform.deepseek.com](https://platform.deepseek.com).
 
-- Use the top input-row agent selector to switch between available agents.
-- The current active agent is synced from backend state.
+### OpenCode Zen Configuration
 
-## Memory Browser
+```toml
+[zen]
+api_key = "zen-your-key-here"
+model = "deepseek-v4-pro"  # 50+ models available
+endpoint = "https://opencode.ai/zen/v1"
+max_tokens = 4096
+```
 
-- Open with `Ctrl+Shift+M`.
-- Search matches session title, category, and session id.
-- Summary shows filtered count.
+Get your API key at [https://opencode.ai/auth](https://opencode.ai/auth).
 
-## Launcher Search
+Popular models on Zen:
+- **Free**: deepseek-v4-flash, llama-4-scout-17b, mistral-small-3.1
+- **Paid**: claude-sonnet-5, gpt-5.4-mini, deepseek-v4-pro
 
-- Open launcher with `Ctrl+K`.
-- Search matches app name, description, and exec command.
-- If no match is found, the empty state includes your search text.
+### OpenClaw Configuration
 
-## Keyboard Shortcuts
+```toml
+[openclaw]
+endpoint = "http://127.0.0.1:18789"
+transport = "cli"  # or "http" for gateway mode
+token = "your-token"
+cli_path = "openclaw"
+auto_start = false  # Set to true with transport = "http" to auto-start gateway
+```
 
-Default bindings (all editable):
+### Ollama Configuration
 
-- `Ctrl+L`: focus input
-- `Ctrl+K`: open app launcher
-- `Ctrl+Shift+M`: open memory browser
-- `Ctrl+Shift+J`: open tasks browser
-- `Ctrl+Shift+S`: open sync selection
-- `Ctrl+Shift+H`: toggle high contrast
-- `Ctrl+Plus`: increase font size
-- `Ctrl+Minus`: decrease font size
-- `Ctrl+0`: reset font size
-- `Ctrl+Slash`: show shortcuts help
-- `Ctrl+Comma`: manage shortcuts
-- `Ctrl+Shift+T`: show onboarding tutorial
-- `Ctrl+Shift+Q`: emergency stop
+```toml
+[ollama]
+endpoint = "http://127.0.0.1:11434"
+model = "phi3:mini"  # Any Ollama model you have pulled
+```
 
-Help fallback keys for layout differences:
+Make sure Ollama is running before starting mentalOS: `ollama serve`
 
-- `Ctrl+?`
-- numpad divide
-- `F1`
+## Using mentalOS
 
-## Onboarding Tutorial
+### Basic Interaction
 
-- Automatically shown for first-time setup.
-- Reopen anytime with `Ctrl+Shift+T`.
-- Step header includes completion percentage.
-- Progress is stored in `~/.config/mentalOS/onboarding.toml`.
+1. Type your request in the input field at the bottom of the window
+2. Press Enter to send
+3. The AI will respond with text and/or suggested commands
+4. Commands that require approval will show a confirmation dialog
 
-## Manage Shortcuts
+### Agent Selector
 
-1. Press `Ctrl+Comma`.
-2. Edit shortcut strings (for example `Ctrl+Shift+H`).
-3. Click Save.
-4. Confirm the "Saved shortcuts to ..." message.
+Use the agent selector near the input to switch between available AI providers and models. The current provider is shown in the top bar.
 
-Shortcuts are persisted to:
+### Provider Health
 
-- `~/.config/mentalOS/shortcuts.toml`
+The top bar shows a provider health indicator that updates every 30 seconds:
+- **[ProviderName: Connected]** — The provider is reachable and responding
+- **[ProviderName: Disconnected]** — The provider is unreachable
 
-## Accessibility
+### Safety Features
 
-- High contrast mode: `Ctrl+Shift+H`
-- Font scaling:
-  - increase: `Ctrl+Plus`
-  - decrease: `Ctrl+Minus`
-  - reset: `Ctrl+0`
-- Screen reader metadata:
-  - prompt input, agent selector, launcher/terminal/stop buttons
-  - chat history region and message log
-  - status/progress elements in the app bar
+- **Command Whitelist**: Known safe commands execute automatically
+- **Approval Gate**: New or risky commands require your explicit approval
+- **Firejail Sandbox**: All commands run in a sandboxed environment with no network access by default
+- **Emergency Stop**: Press `Ctrl+Shift+Q` or click the STOP button to immediately halt all operations
 
-## Data Locations
+### Keyboard Shortcuts
 
-- config: `~/.config/mentalOS/config.toml`
-- shortcut bindings: `~/.config/mentalOS/shortcuts.toml`
-- memory store: `~/workspaces/.memory/`
-- tasks: `~/workspaces/.memory/tasks.json`
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Shift+Q` | Emergency stop |
+| `Ctrl+N` | New chat |
+| `Ctrl+Shift+M` | Open memory browser |
+| `Ctrl+Shift+J` | Open tasks browser |
+| `Ctrl+/` | Show shortcuts help |
+| `Ctrl+Shift+H` | Toggle high contrast |
+| `Ctrl+Plus/Minus/0` | Font size controls |
+| `Ctrl+Comma` | Customize key bindings |
+
+## Troubleshooting
+
+### "Provider unavailable" error
+
+- **OpenClaw**: Make sure the gateway is running (`openclaw gateway --port 18789`) or enable `auto_start = true` with `transport = "http"`
+- **Ollama**: Make sure Ollama is running (`ollama serve`) and the model is pulled (`ollama pull phi3:mini`)
+- **DeepSeek**: Check your API key and internet connection
+- **Zen**: Check your API key and internet connection
+
+### Gateway won't start
+
+The OpenClaw launcher uses health-check polling with exponential backoff. If the gateway doesn't become healthy within ~20 seconds, check:
+1. Is the OpenClaw binary in your PATH?
+2. Is port 18789 available?
+3. Check the gateway log at `~/.local/share/mentalOS/logs/openclaw-gateway.log`
+
+### Circuit breaker is open
+
+If a provider fails multiple times consecutively, the circuit breaker opens and rejects requests for 30 seconds. This is a safety feature to prevent hammering a downed provider. After the cooldown, a single request is allowed through to test recovery.
+
+## Privacy
+
+- **API keys** are stored locally in `~/.config/mentalOS/config.toml` and never shared
+- **Conversation history** is stored locally in `~/workspaces/.memory/`
+- **Command execution** is sandboxed via Firejail with no network access by default
+- **Local providers** (OpenClaw, Ollama) keep all data on your machine
+- **Cloud providers** (DeepSeek, Zen) send your messages to their servers per their respective privacy policies

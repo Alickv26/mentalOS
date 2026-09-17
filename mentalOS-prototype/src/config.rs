@@ -1,6 +1,7 @@
 use crate::error::{MentalOSError, Result};
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -11,8 +12,6 @@ use std::path::{Path, PathBuf};
 /// let config = mental_os::Config::load().unwrap();
 /// println!("provider={}", config.ai.provider);
 /// ```
-use std::collections::HashMap;
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
@@ -21,6 +20,10 @@ pub struct Config {
     pub openclaw: OpenClawConfig,
     #[serde(default)]
     pub ollama: OllamaConfig,
+    #[serde(default)]
+    pub deepseek: DeepSeekConfig,
+    #[serde(default)]
+    pub zen: OpenCodeZenConfig,
     #[serde(default)]
     pub paths: PathsConfig,
     #[serde(default)]
@@ -31,7 +34,7 @@ pub struct Config {
 pub struct AgentConfig {
     pub name: String,
     pub description: Option<String>,
-    pub provider: String, // "openclaw", "ollama", "claude", etc.
+    pub provider: String, // "openclaw", "ollama", "deepseek", "zen", etc.
     pub model: Option<String>,
     pub endpoint: Option<String>,
     pub executable: Option<String>, // For local agents like OpenCode
@@ -42,7 +45,6 @@ pub struct AgentConfig {
 pub struct AiConfig {
     #[serde(default = "default_provider")]
     pub provider: String,
-    // ... items from original ...
     #[serde(default = "default_model")]
     pub model: String,
     #[serde(default = "default_fallback_to_ollama")]
@@ -75,6 +77,36 @@ pub struct OllamaConfig {
     pub endpoint: String,
     #[serde(default = "default_model")]
     pub model: String,
+}
+
+/// DeepSeek cloud provider configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeepSeekConfig {
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_deepseek_model")]
+    pub model: String,
+    #[serde(default = "default_deepseek_endpoint")]
+    pub endpoint: String,
+    #[serde(default = "default_deepseek_thinking_mode")]
+    pub thinking_mode: bool,
+    #[serde(default = "default_deepseek_max_tokens")]
+    pub max_tokens: u32,
+    #[serde(default = "default_deepseek_temperature")]
+    pub temperature: f32,
+}
+
+/// OpenCode Zen multi-model gateway configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenCodeZenConfig {
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_zen_model")]
+    pub model: String,
+    #[serde(default = "default_zen_endpoint")]
+    pub endpoint: String,
+    #[serde(default = "default_zen_max_tokens")]
+    pub max_tokens: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,6 +145,30 @@ impl Default for OllamaConfig {
         Self {
             endpoint: default_ollama_endpoint(),
             model: default_model(),
+        }
+    }
+}
+
+impl Default for DeepSeekConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            model: default_deepseek_model(),
+            endpoint: default_deepseek_endpoint(),
+            thinking_mode: default_deepseek_thinking_mode(),
+            max_tokens: default_deepseek_max_tokens(),
+            temperature: default_deepseek_temperature(),
+        }
+    }
+}
+
+impl Default for OpenCodeZenConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            model: default_zen_model(),
+            endpoint: default_zen_endpoint(),
+            max_tokens: default_zen_max_tokens(),
         }
     }
 }
@@ -223,6 +279,38 @@ fn default_openclaw_cli_path() -> String {
 
 fn default_ollama_endpoint() -> String {
     "http://127.0.0.1:11434".to_string()
+}
+
+fn default_deepseek_model() -> String {
+    "deepseek-v4-pro".to_string()
+}
+
+fn default_deepseek_endpoint() -> String {
+    "https://api.deepseek.com".to_string()
+}
+
+fn default_deepseek_thinking_mode() -> bool {
+    true
+}
+
+fn default_deepseek_max_tokens() -> u32 {
+    4096
+}
+
+fn default_deepseek_temperature() -> f32 {
+    0.7
+}
+
+fn default_zen_model() -> String {
+    "deepseek-v4-pro".to_string()
+}
+
+fn default_zen_endpoint() -> String {
+    "https://opencode.ai/zen/v1".to_string()
+}
+
+fn default_zen_max_tokens() -> u32 {
+    4096
 }
 
 fn default_workspace_dir() -> String {

@@ -1,12 +1,11 @@
-use mental_os::agent_manager::AgentManager;
-use mental_os::config::{AiConfig, OllamaConfig, OpenClawConfig, PathsConfig};
+use mental_os::config::{AiConfig, DeepSeekConfig, OllamaConfig, OpenClawConfig, OpenCodeZenConfig, PathsConfig};
 use mental_os::memory::MemoryManager;
 use mental_os::openclaw::OpenClawClient;
 use mental_os::project_handler::ProjectHandler;
+use mental_os::providers::AiProvider;
 use mental_os::router::{CommandExecutor, CommandOutput, CommandRouter};
 use mental_os::whitelist::WhitelistManager;
 use mental_os::workspace::{ProjectCommands, WorkspaceManager};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -115,16 +114,16 @@ fn build_benchmark_router() -> (CommandRouter<NoopExecutor>, TempDir) {
         ai: AiConfig::default(),
         openclaw: OpenClawConfig::default(),
         ollama: OllamaConfig::default(),
+        deepseek: DeepSeekConfig::default(),
+        zen: OpenCodeZenConfig::default(),
         paths: PathsConfig::default(),
         agents: std::collections::HashMap::new(),
     };
 
-    let openclaw = OpenClawClient::from_config(&config);
-    let mut agent_manager = AgentManager::new(PathBuf::from("/tmp"));
-    agent_manager.load_agents(config.agents.clone());
-    let agent_manager = Arc::new(Mutex::new(agent_manager));
+    let openclaw = OpenClawClient::from_config(&config).unwrap();
+    let openclaw = Box::new(openclaw) as Box<dyn AiProvider>;
     let project_handler = ProjectHandler::new(workspace_root.clone(), "opencode".to_string());
-    let router = CommandRouter::new(openclaw, agent_manager, whitelist, memory, NoopExecutor)
+    let router = CommandRouter::new(openclaw, whitelist, memory, NoopExecutor)
         .with_project_handler(project_handler)
         .with_workspace_manager(WorkspaceManager::new(workspace_root));
 

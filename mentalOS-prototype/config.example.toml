@@ -1,8 +1,14 @@
 # mentalOS configuration (example)
 # Copy to ~/.config/mentalOS/config.toml and fill in as needed.
+#
+# AI Providers:
+#   - openclaw: Local gateway (CLI or HTTP transport, auto-start supported)
+#   - ollama:   Local models via /api/chat (multi-turn conversations)
+#   - deepseek: Cloud API (OpenAI-compatible, thinking mode)
+#   - zen:      Multi-model gateway (50+ models, 3 API formats, 7 free models)
 
 [ai]
-# Provider options: "openclaw", "ollama"
+# Provider options: "openclaw", "ollama", "deepseek", "zen"
 provider = "openclaw"
 # Default model name used by the active provider.
 model = "phi3:mini"
@@ -11,6 +17,7 @@ fallback_to_ollama = true
 # Number of recent messages to include as context.
 context_messages = 20
 
+# ── OpenClaw (Local Gateway) ────────────────────────────────────
 [openclaw]
 # OpenClaw Gateway endpoint
 endpoint = "http://127.0.0.1:18789"
@@ -24,15 +31,63 @@ token = "mentalos-dev-token"
 cli_path = "openclaw"
 # Optional CLI args (defaults to ["agent"] if empty)
 cli_args = ["agent", "--thinking", "low"]
-# Auto-start gateway if not running (HTTP transport only)
+# Auto-start gateway if not running (HTTP transport only).
+# The launcher uses health-check polling with exponential backoff
+# instead of a fixed sleep, so it waits until the gateway is ready.
 auto_start = false
 
+# ── Ollama (Local Models) ──────────────────────────────────────
 [ollama]
-# Ollama API endpoint
+# Ollama API endpoint (uses /api/chat for multi-turn conversations)
 endpoint = "http://127.0.0.1:11434"
 # Local model name
 model = "phi3:mini"
 
+# ── DeepSeek (Cloud API) ───────────────────────────────────────
+[deepseek]
+# DeepSeek API key (required for cloud provider)
+# Get your key at https://platform.deepseek.com
+api_key = ""
+# Model options: "deepseek-v4-pro", "deepseek-v4-flash"
+model = "deepseek-v4-pro"
+# API endpoint (OpenAI-compatible)
+endpoint = "https://api.deepseek.com"
+# Enable thinking mode (includes reasoning_content in responses)
+thinking_mode = true
+# Maximum output tokens
+max_tokens = 4096
+# Sampling temperature (0.0 - 2.0)
+temperature = 0.7
+
+# ── OpenCode Zen (Multi-Model Gateway) ─────────────────────────
+[zen]
+# OpenCode Zen API key (required for multi-model gateway)
+# Get your key at https://opencode.ai/auth
+api_key = ""
+# Model: 50+ models available. 7 free models included.
+# Examples: deepseek-v4-pro, claude-sonnet-5, gpt-5.4-mini, llama-4-scout-17b
+model = "deepseek-v4-pro"
+# Gateway endpoint
+endpoint = "https://opencode.ai/zen/v1"
+# Maximum output tokens
+max_tokens = 4096
+
 [paths]
 # Where mentalOS stores projects and memory
 workspace_dir = "~/workspaces"
+
+# ── Custom Agents ───────────────────────────────────────────────
+# You can define additional agents with custom provider/model/endpoint.
+# Each agent entry needs a unique key.
+#
+# [agents.coder]
+# name = "Coder"
+# description = "Code-focused DeepSeek agent"
+# provider = "deepseek"
+# model = "deepseek-v4-pro"
+#
+# [agents.writer]
+# name = "Writer"
+# description = "General-purpose Zen agent"
+# provider = "zen"
+# model = "claude-sonnet-5"

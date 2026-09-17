@@ -18,8 +18,8 @@ pub enum MentalOSError {
     NotApproved(String),
     #[error("command execution failed: {0}")]
     CommandFailed(String),
-    #[error("openclaw unavailable: {0}")]
-    OpenClawUnavailable(String),
+    #[error("provider '{provider}' unavailable: {message}")]
+    ProviderUnavailable { provider: String, message: String },
     #[error("invalid command: {0}")]
     InvalidCommand(String),
     #[error("other error: {0}")]

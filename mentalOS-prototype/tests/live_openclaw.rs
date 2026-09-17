@@ -1,4 +1,5 @@
 use mental_os::openclaw::OpenClawClient;
+use mental_os::providers::AiProvider;
 
 #[tokio::test]
 async fn live_openclaw() {
@@ -8,10 +9,10 @@ async fn live_openclaw() {
     }
 
     let config = mental_os::Config::load().expect("config missing");
-    let client = OpenClawClient::from_config(&config);
+    let client = OpenClawClient::from_config(&config).expect("create provider");
+
     let response = client
         .send_message("Say hello in one sentence.", &[])
-        .await
         .expect("openclaw request failed");
 
     assert!(!response.trim().is_empty());

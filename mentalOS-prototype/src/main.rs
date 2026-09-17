@@ -1,10 +1,9 @@
 use gtk4::prelude::*;
 use gtk4::{Application, CssProvider, gdk};
-use mental_os::agent_manager::AgentManager;
 use mental_os::config::{Config, config_path};
 use mental_os::memory::MemoryManager;
-use mental_os::openclaw::OpenClawClient;
-use mental_os::openclaw_launcher::OpenClawLauncher;
+use mental_os::providers;
+use mental_os::providers::openclaw_launcher::OpenClawLauncher;
 use mental_os::project_handler::ProjectHandler;
 use mental_os::router::{CommandRouter, FirejailExecutor};
 use mental_os::task_tracker::TaskTracker;
@@ -85,11 +84,28 @@ fn main() {
                 .and_then(|p| p.parent().map(|d| d.join("whitelist.json")))
                 .unwrap_or_else(|| PathBuf::from("/tmp/mentalOS-whitelist.json"));
 
-            let openclaw = OpenClawClient::from_config(&config);
-            let mut openclaw_launcher = OpenClawLauncher::from_config(&config);
-            if let Err(err) = openclaw_launcher.ensure_running() {
-                log::warn!("OpenClaw launcher startup check failed: {}", err);
-            }
+            let provider_name = config.ai.provider.clone();
+            let openclaw = providers::create_provider(&config)
+                .unwrap_or_else(|e| {
+                    log::error!("Failed to create AI provider '{}': {}", provider_name, e);
+                    // Fallback to OpenClaw provider
+                    let openclaw_provider = mental_os::providers::openclaw::OpenClawProvider::from_config(&config)
+                        .expect("Failed to create fallback OpenClaw provider");
+                    Box::new(openclaw_provider) as Box<dyn mental_os::providers::AiProvider>
+                });
+
+            // Only create and start the OpenClaw launcher when the configured provider is OpenClaw.
+            // Cloud providers (DeepSeek, Zen) don't need a local gateway process.
+            let mut openclaw_launcher = if provider_name == "openclaw" {
+                let launcher = OpenClawLauncher::from_config(&config);
+                if let Err(err) = launcher.ensure_running() {
+                    log::warn!("OpenClaw launcher startup check failed: {}", err);
+                }
+                Some(launcher)
+            } else {
+                log::info!("Provider '{}' does not require a local gateway — skipping launcher", provider_name);
+                None
+            };
             let whitelist = Arc::new(Mutex::new(
                 WhitelistManager::load(whitelist_path.clone())
                     .unwrap_or_else(|_| WhitelistManager::new(whitelist_path)),
@@ -106,18 +122,8 @@ fn main() {
             let task_tracker = TaskTracker::new(workspace_dir.clone());
             let workspace_manager = WorkspaceManager::new(workspace_dir);
 
-            let mut agent_manager = AgentManager::new(
-                config_path()
-                    .ok()
-                    .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-                    .unwrap_or_else(|| PathBuf::from("/tmp")),
-            );
-            agent_manager.load_agents(config.agents.clone());
-            let agent_manager = Arc::new(Mutex::new(agent_manager));
-
             let mut router = CommandRouter::new(
                 openclaw,
-                agent_manager,
                 whitelist,
                 memory,
                 executor,
@@ -134,8 +140,10 @@ fn main() {
                         category,
                     } => {
                         log::info!("Processing input: {}", text);
-                        if let Err(err) = openclaw_launcher.ensure_running() {
-                            log::warn!("OpenClaw launcher check failed: {}", err);
+                        if let Some(ref mut launcher) = openclaw_launcher {
+                            if let Err(err) = launcher.ensure_running() {
+                                log::warn!("OpenClaw launcher check failed: {}", err);
+                            }
                         }
                         send_ui(
                             &ui_tx,
@@ -155,7 +163,7 @@ fn main() {
                             continue;
                         }
 
-                        match router.handle_input(&workspace, &category, &text, 5).await {
+                        match router.handle_input(&workspace, &category, &text, 5) {
                             Ok(response) => {
                                 send_ui(&ui_tx, BackendResponse::Chat(response.message));
                                 for output in response.outputs {
@@ -278,7 +286,9 @@ fn main() {
                     }
                     BackendRequest::EmergencyStop => {
                         log::warn!("Emergency stop requested");
-                        let _ = openclaw_launcher.stop();
+                        if let Some(ref mut launcher) = openclaw_launcher {
+                            let _ = launcher.stop();
+                        }
                         match router.emergency_stop() {
                             Ok(msg) => {
                                 send_ui(&ui_tx, BackendResponse::Chat(msg));
@@ -287,6 +297,17 @@ fn main() {
                                 send_ui(&ui_tx, BackendResponse::Error(e.to_string()));
                             }
                         }
+                    }
+                    BackendRequest::CheckProviderHealth => {
+                        let provider_name = router.get_current_provider();
+                        let healthy = router.is_provider_healthy();
+                        send_ui(
+                            &ui_tx,
+                            BackendResponse::ProviderHealth {
+                                provider: provider_name,
+                                healthy,
+                            },
+                        );
                     }
                 }
             }

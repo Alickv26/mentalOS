@@ -34,6 +34,8 @@ pub enum BackendRequest {
         workspace: String,
         command_type: String,
     },
+    /// Check whether the current AI provider is reachable.
+    CheckProviderHealth,
 }
 
 /// Responses sent from the Backend to the UI.
@@ -67,5 +69,10 @@ pub enum BackendResponse {
         success: bool,
         path: Option<String>,
         message: String,
+    },
+    /// Provider health check result.
+    ProviderHealth {
+        provider: String,
+        healthy: bool,
     },
 }

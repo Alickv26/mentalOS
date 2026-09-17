@@ -92,6 +92,8 @@ impl AgentManager {
             if config.endpoint.is_some()
                 || config.provider == "openclaw"
                 || config.provider == "ollama"
+                || config.provider == "deepseek"
+                || config.provider == "zen"
             {
                 return true;
             }

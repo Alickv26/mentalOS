@@ -5,10 +5,11 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use sysinfo::System;
 
-/// Top bar displaying the app name, AI status, system stats, and emergency stop.
+/// Top bar displaying the app name, AI status, provider health, system stats, and emergency stop.
 pub struct AppBar {
     pub container: Box,
     status_label: Label,
+    provider_health_label: Label,
     session_label: Label,
     _cpu_label: Label,
     _mem_label: Label,
@@ -59,6 +60,18 @@ impl AppBar {
             gtk4::accessible::Property::Description("Current AI runtime status."),
         ]);
         row.append(&status_label);
+
+        // ── Provider health indicator ──
+        let provider_health_label = Label::new(Some(""));
+        provider_health_label.add_css_class("app-bar-status");
+        provider_health_label.set_halign(gtk4::Align::Start);
+        provider_health_label.set_visible(false);
+        provider_health_label.set_accessible_role(gtk4::AccessibleRole::Status);
+        provider_health_label.update_property(&[
+            gtk4::accessible::Property::Label("Provider health"),
+            gtk4::accessible::Property::Description("Current AI provider connection health."),
+        ]);
+        row.append(&provider_health_label);
 
         let session_label = Label::new(None);
         session_label.add_css_class("app-bar-stats");
@@ -136,6 +149,7 @@ impl AppBar {
         let bar = Self {
             container,
             status_label,
+            provider_health_label,
             session_label,
             _cpu_label: cpu_label.clone(),
             _mem_label: mem_label.clone(),
@@ -194,6 +208,26 @@ impl AppBar {
             gtk4::accessible::Property::Label(&format!("AI status {status}")),
             gtk4::accessible::Property::Description("Current AI runtime status."),
         ]);
+    }
+
+    /// Update the provider health indicator.
+    ///
+    /// Shows a green "connected" or red "disconnected" indicator for the
+    /// current AI provider. When `healthy` is `None`, the indicator is hidden.
+    pub fn set_provider_health(&self, provider: &str, healthy: Option<bool>) {
+        match healthy {
+            Some(true) => {
+                self.provider_health_label.set_text(&format!("[{}: Connected]", provider));
+                self.provider_health_label.set_visible(true);
+            }
+            Some(false) => {
+                self.provider_health_label.set_text(&format!("[{}: Disconnected]", provider));
+                self.provider_health_label.set_visible(true);
+            }
+            None => {
+                self.provider_health_label.set_visible(false);
+            }
+        }
     }
 
     pub fn connect_stop_clicked<F: Fn(&Button) + 'static>(&self, f: F) {

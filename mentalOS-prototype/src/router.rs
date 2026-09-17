@@ -1,7 +1,7 @@
-use crate::agent_manager::AgentManager;
 use crate::error::{MentalOSError, Result};
 use crate::memory::{MemoryManager, Message, MessageAction, Role};
-use crate::openclaw::OpenClawClient;
+use crate::providers::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
+use crate::providers::AiProvider;
 use crate::project_handler::ProjectHandler;
 use crate::task_tracker::TaskTracker;
 use crate::whitelist::{WhitelistDecision, WhitelistManager};
@@ -191,21 +191,18 @@ impl CommandExecutor for FirejailExecutor {
 /// ```no_run
 /// use mental_os::router::{CommandRouter, FirejailExecutor};
 /// use mental_os::openclaw::OpenClawClient;
-/// use mental_os::agent_manager::AgentManager;
 /// use mental_os::whitelist::WhitelistManager;
 /// use mental_os::memory::MemoryManager;
 /// use std::sync::{Arc, Mutex};
-/// use std::path::PathBuf;
 /// let config = mental_os::Config::load().unwrap();
 /// let openclaw = OpenClawClient::from_config(&config);
-/// let agent_manager = Arc::new(Mutex::new(AgentManager::new(PathBuf::from("/tmp"))));
 /// let whitelist = Arc::new(Mutex::new(WhitelistManager::load("/tmp/whitelist.json".into()).unwrap()));
 /// let memory = Arc::new(Mutex::new(MemoryManager::new("/tmp/workspaces".into())));
-/// let router = CommandRouter::new(openclaw, agent_manager, whitelist, memory, FirejailExecutor::new());
+/// let router = CommandRouter::new(openclaw, whitelist, memory, FirejailExecutor::new());
 /// ```
 pub struct CommandRouter<E: CommandExecutor> {
-    openclaw: OpenClawClient,
-    agent_manager: Arc<Mutex<AgentManager>>,
+    provider: Box<dyn AiProvider>,
+    circuit_breaker: CircuitBreaker,
     whitelist: Arc<Mutex<WhitelistManager>>,
     memory: Arc<Mutex<MemoryManager>>,
     executor: E,
@@ -229,15 +226,15 @@ pub enum RouterConfirmation {
 
 impl<E: CommandExecutor> CommandRouter<E> {
     pub fn new(
-        openclaw: OpenClawClient,
-        agent_manager: Arc<Mutex<AgentManager>>,
+        provider: Box<dyn AiProvider>,
         whitelist: Arc<Mutex<WhitelistManager>>,
         memory: Arc<Mutex<MemoryManager>>,
         executor: E,
     ) -> Self {
+        let provider_name = provider.name().to_string();
         Self {
-            openclaw,
-            agent_manager,
+            provider,
+            circuit_breaker: CircuitBreaker::new(provider_name, CircuitBreakerConfig::default()),
             whitelist,
             memory,
             executor,
@@ -290,7 +287,7 @@ impl<E: CommandExecutor> CommandRouter<E> {
                 description: None,
                 auto_setup: true,
             };
-            let agent = self.get_current_provider();
+            let agent = self.provider.get_current_provider();
             match handler.scaffold_project(&request, &agent) {
                 Ok(response) => {
                     if response.success
@@ -326,34 +323,26 @@ impl<E: CommandExecutor> CommandRouter<E> {
     }
 
     pub fn list_agents(&self) -> Vec<String> {
-        let manager = self
-            .agent_manager
-            .lock()
-            .expect("AgentManager lock poisoned");
-        manager.list_agents()
+        self.provider.list_agents()
     }
 
     pub fn get_current_provider(&self) -> String {
-        let manager = self
-            .agent_manager
-            .lock()
-            .expect("AgentManager lock poisoned");
-        manager.get_active_agent_name().to_string()
+        self.provider.get_current_provider()
     }
 
     pub fn switch_agent(&mut self, name: &str) -> Result<String> {
-        let agent_config = {
-            let mut manager = self
-                .agent_manager
-                .lock()
-                .expect("AgentManager lock poisoned");
-            manager.switch_agent(name)?;
-            manager.get_active_agent().cloned()
-        };
-        if let Some(config) = agent_config {
-            self.openclaw.apply_agent_config(&config);
-        }
-        Ok(format!("Switched to agent: {}", name))
+        self.provider.switch_agent(name)
+    }
+
+    /// Check whether the current AI provider is healthy and reachable.
+    ///
+    /// This checks both the provider's own health check and the circuit breaker state.
+    /// Returns `false` if the provider reports unhealthy or the circuit breaker is open.
+    pub fn is_provider_healthy(&self) -> bool {
+        use crate::providers::circuit_breaker::CircuitState;
+        let provider_healthy = self.provider.is_healthy();
+        let breaker_state = self.circuit_breaker.state();
+        provider_healthy && breaker_state != CircuitState::Open
     }
 
     pub fn run_project_command(
@@ -374,7 +363,7 @@ impl<E: CommandExecutor> CommandRouter<E> {
         Ok("Emergency stop executed. Running sandboxed commands were terminated.".to_string())
     }
 
-    pub async fn handle_input(
+    pub fn handle_input(
         &mut self,
         workspace: &str,
         category: &str,
@@ -383,7 +372,7 @@ impl<E: CommandExecutor> CommandRouter<E> {
     ) -> Result<RouterResponse> {
         // Intercept agent switching commands
         if let Some(target) = parse_switch_target(input) {
-            match self.switch_agent(target) {
+            match self.provider.switch_agent(target) {
                 Ok(msg) => {
                     return Ok(RouterResponse {
                         message: msg,
@@ -392,7 +381,7 @@ impl<E: CommandExecutor> CommandRouter<E> {
                     });
                 }
                 Err(_) => {
-                    let agents = self.list_agents();
+                    let agents = self.provider.list_agents();
                     let msg = format!(
                         "Agent '{}' not found. Available agents: {}",
                         target,
@@ -434,7 +423,25 @@ impl<E: CommandExecutor> CommandRouter<E> {
             context.push(smart_context);
         }
 
-        let ai_text = self.openclaw.send_message(input, &context).await?;
+        // Check circuit breaker before sending to provider
+        if let Err(err) = self.circuit_breaker.allow_request() {
+            warn!("Circuit breaker blocked request: {}", err);
+            return Err(MentalOSError::ProviderUnavailable {
+                provider: self.provider.name().to_string(),
+                message: err,
+            });
+        }
+
+        let ai_text = match self.provider.send_message(input, &context) {
+            Ok(response) => {
+                self.circuit_breaker.record_success();
+                response
+            }
+            Err(err) => {
+                self.circuit_breaker.record_failure();
+                return Err(err);
+            }
+        };
         let ai_response = parse_ai_response(&ai_text);
 
         let mut outputs = Vec::new();
@@ -1016,6 +1023,8 @@ mod tests {
                 ..OpenClawConfig::default()
             },
             ollama: OllamaConfig::default(),
+            deepseek: crate::config::DeepSeekConfig::default(),
+            zen: crate::config::OpenCodeZenConfig::default(),
             paths: PathsConfig::default(),
             agents: std::collections::HashMap::new(),
         }
@@ -1045,7 +1054,8 @@ mod tests {
         config.openclaw.endpoint = server.base_url();
         config.ai.fallback_to_ollama = false;
 
-        let openclaw = OpenClawClient::from_config(&config);
+        let openclaw = OpenClawClient::from_config(&config).unwrap();
+        let openclaw = Box::new(openclaw) as Box<dyn AiProvider>;
         let temp_dir = TempDir::new().unwrap();
         let memory = Arc::new(Mutex::new(MemoryManager::new(
             temp_dir.path().to_path_buf(),
@@ -1055,14 +1065,9 @@ mod tests {
         whitelist.add_exact("echo hello");
         let whitelist = Arc::new(Mutex::new(whitelist));
 
-        let mut agent_manager = AgentManager::new(PathBuf::from("/tmp"));
-        agent_manager.load_agents(config.agents.clone());
-        let agent_manager = Arc::new(Mutex::new(agent_manager));
-
-        let mut router = CommandRouter::new(openclaw, agent_manager, whitelist, memory, NoopExecutor);
+        let mut router = CommandRouter::new(openclaw, whitelist, memory, NoopExecutor);
         let result = router
             .handle_input("demo", "general", "hi", 5)
-            .await
             .unwrap();
 
         assert_eq!(result.outputs.len(), 1);

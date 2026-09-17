@@ -313,6 +313,9 @@ impl MainWindow {
                         app_bar_ref.set_status("Idle");
                         app_bar_ref.set_busy(false);
                     }
+                    BackendResponse::ProviderHealth { provider, healthy } => {
+                        app_bar_ref.set_provider_health(&provider, Some(healthy));
+                    }
                 }
             }
         });
@@ -507,6 +510,13 @@ impl MainWindow {
             glib::Propagation::Proceed
         });
         window.add_controller(key_ctrl);
+
+        // ── Periodic provider health check (every 30s) ──
+        let health_tx = backend_tx.clone();
+        glib::timeout_add_seconds_local(30, move || {
+            let _ = health_tx.blocking_send(BackendRequest::CheckProviderHealth);
+            glib::ControlFlow::Continue
+        });
 
         pill.input.grab_focus();
 

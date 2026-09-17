@@ -75,4 +75,14 @@ pub enum BackendResponse {
         provider: String,
         healthy: bool,
     },
+    /// Circuit breaker state changed.
+    ///
+    /// Sent after every `handle_input` call so the UI can reflect the
+    /// current breaker state in real time (Closed = normal, Open = red dot,
+    /// HalfOpen = yellow dot).
+    CircuitStateChanged(CircuitState),
 }
+
+/// Re-export CircuitState so message consumers don't need a separate import.
+pub use crate::providers::circuit_breaker::CircuitState;
+

@@ -192,6 +192,13 @@ fn main() {
                                 send_ui(&ui_tx, BackendResponse::Error(e.to_string()));
                             }
                         }
+                        // Always notify the UI of the current circuit breaker state
+                        // after a handle_input call, so the omni pill can reflect
+                        // Open (red), HalfOpen (yellow), or Closed (normal) in real time.
+                        send_ui(
+                            &ui_tx,
+                            BackendResponse::CircuitStateChanged(router.circuit_state()),
+                        );
                     }
                     BackendRequest::ExecuteCommand(cmd) => {
                         log::info!("Executing approved command: {}", cmd);

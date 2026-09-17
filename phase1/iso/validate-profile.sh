@@ -43,6 +43,13 @@ required_files=(
     "packages.x86_64"
     "pacman.conf"
     "airootfs/root/customize_airootfs.sh"
+    "airootfs/usr/local/bin/mentalos-install"
+    "airootfs/usr/local/bin/mentalos-launch"
+    "airootfs/usr/local/bin/mentalos-workspace-monitor"
+    "airootfs/etc/systemd/system/mentalOS.service"
+    "airootfs/etc/systemd/system/openclaw.service"
+    "airootfs/etc/systemd/system/ollama.service"
+    "airootfs/etc/systemd/system/workspace-monitor.service"
     "build-iso.sh"
     "test-qemu.sh"
     "efiboot/loader/loader.conf"
@@ -220,6 +227,108 @@ if [[ -f "${SYSLINUX_CFG}" ]]; then
     fi
 fi
 
+# ─── Systemd service units ───────────────────────────────────
+
+section "Systemd service units"
+
+service_files=(
+    "airootfs/etc/systemd/system/mentalOS.service"
+    "airootfs/etc/systemd/system/openclaw.service"
+    "airootfs/etc/systemd/system/ollama.service"
+    "airootfs/etc/systemd/system/workspace-monitor.service"
+)
+
+for svc in "${service_files[@]}"; do
+    path="${PROFILE_DIR}/${svc}"
+    if [[ ! -f "${path}" ]]; then
+        err "missing service file: ${svc}"
+        continue
+    fi
+
+    name=$(basename "${svc}")
+
+    # Must be a valid INI-ish systemd unit (look for [Unit] and [Service] sections)
+    if grep -q '^\[Unit\]' "${path}" && grep -q '^\[Service\]' "${path}"; then
+        ok "${name} has [Unit] and [Service] sections"
+    else
+        err "${name} missing [Unit] or [Service] section"
+    fi
+
+    # Must have Description=
+    if grep -q '^Description=' "${path}"; then
+        ok "${name} has Description="
+    else
+        err "${name} missing Description="
+    fi
+
+    # Must have ExecStart=
+    if grep -q '^ExecStart=' "${path}"; then
+        ok "${name} has ExecStart="
+    else
+        err "${name} missing ExecStart="
+    fi
+
+    # Must have Restart= for resilience
+    if grep -q '^Restart=' "${path}"; then
+        ok "${name} has Restart="
+    else
+        err "${name} missing Restart= (services should auto-restart on failure)"
+    fi
+
+    # Must be enabled via [Install] section
+    if grep -q '^\[Install\]' "${path}" && grep -q '^WantedBy=' "${path}"; then
+        ok "${name} has [Install] WantedBy="
+    else
+        err "${name} missing [Install] WantedBy="
+    fi
+done
+
+# Check that mentalOS.service depends on openclaw and ollama
+MENTALOS_SVC="${PROFILE_DIR}/airootfs/etc/systemd/system/mentalOS.service"
+if [[ -f "${MENTALOS_SVC}" ]]; then
+    if grep -q '^Wants=openclaw.service ollama.service' "${MENTALOS_SVC}"; then
+        ok "mentalOS.service Wants= openclaw + ollama"
+    else
+        err "mentalOS.service should Wants= openclaw.service ollama.service"
+    fi
+
+    if grep -q '^After=graphical.target' "${MENTALOS_SVC}"; then
+        ok "mentalOS.service starts After= graphical.target"
+    else
+        err "mentalOS.service should start After= graphical.target"
+    fi
+
+    if grep -q '^WantedBy=graphical.target' "${MENTALOS_SVC}"; then
+        ok "mentalOS.service WantedBy= graphical.target"
+    else
+        err "mentalOS.service should be WantedBy= graphical.target"
+    fi
+fi
+
+# Check that openclaw.service and ollama.service are WantedBy= multi-user.target
+for svc_name in openclaw ollama workspace-monitor; do
+    svc_path="${PROFILE_DIR}/airootfs/etc/systemd/system/${svc_name}.service"
+    if [[ -f "${svc_path}" ]]; then
+        if grep -q '^WantedBy=multi-user.target' "${svc_path}"; then
+            ok "${svc_name}.service WantedBy= multi-user.target"
+        else
+            err "${svc_name}.service should be WantedBy= multi-user.target"
+        fi
+    fi
+done
+
+# Check that customize_airootfs.sh enables all 4 services
+CUSTOMIZE="${PROFILE_DIR}/airootfs/root/customize_airootfs.sh"
+if [[ -f "${CUSTOMIZE}" ]]; then
+    for svc in mentalOS openclaw ollama workspace-monitor; do
+        if grep -q "systemctl enable ${svc}.service" "${CUSTOMIZE}"; then
+            ok "customize_airootfs.sh enables ${svc}.service"
+        else
+            err "customize_airootfs.sh should enable ${svc}.service"
+        fi
+    done
+fi
+
 # ─── Shell scripts syntax ────────────────────────────────────
 
 section "Shell script syntax"
@@ -229,8 +338,10 @@ shell_scripts=(
     "airootfs/root/customize_airootfs.sh"
     "airootfs/usr/local/bin/mentalos-install"
     "airootfs/usr/local/bin/mentalos-launch"
+    "airootfs/usr/local/bin/mentalos-workspace-monitor"
     "build-iso.sh"
     "test-qemu.sh"
+    "validate-profile.sh"
 )
 
 for s in "${shell_scripts[@]}"; do

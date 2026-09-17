@@ -1,0 +1,41 @@
+[Unit]
+Description=mentalOS main application (GTK4 AI assistant)
+Documentation=https://github.com/Alickv26/mentalOS
+# Start after the display server is up and the AI backends are reachable.
+# openclaw and ollama are WantedBy this unit so they start in parallel.
+After=graphical.target openclaw.service ollama.service
+Wants=openclaw.service ollama.service
+# We don't hard-require the backends — mentalOS has fallback logic and
+# the user may have configured a cloud provider instead.
+
+[Service]
+Type=simple
+User=user
+Group=user
+# Set display env vars so the GTK app can connect to sway's Wayland display.
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=HOME=/home/user
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/mentalOS
+Restart=on-failure
+RestartSec=3
+# Give it a moment to come up; if it crashes 5 times in 30s, stop retrying.
+StartLimitBurst=5
+StartLimitIntervalSec=30
+
+# Security hardening — mentalOS needs display + network but not much else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/user /var/lib/mentalOS
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=graphical.target

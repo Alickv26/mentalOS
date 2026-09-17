@@ -26,6 +26,7 @@ run() {
   if [[ "$DRY_RUN" == "1" ]]; then
     printf '[dry-run] %s\n' "$*"
   else
+    # shellcheck disable=SC2294  # eval is intentional — run() takes a shell command string for dry-run echo
     eval "$@"
   fi
 }

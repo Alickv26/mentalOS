@@ -1,0 +1,39 @@
+[Unit]
+Description=Ollama local LLM server (fallback AI backend for mentalOS)
+Documentation=https://github.com/ollama/ollama
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ollama
+Group=ollama
+# Ollama listens on localhost:11434 by default.
+Environment=HOME=/var/lib/ollama
+Environment=OLLAMA_HOST=127.0.0.1:11434
+# Keep all model files under /var/lib/ollama so they persist across reboots.
+Environment=OLLAMA_MODELS=/var/lib/ollama/models
+ExecStart=/usr/local/bin/ollama serve
+Restart=on-failure
+RestartSec=2
+StartLimitBurst=5
+StartLimitIntervalSec=30
+
+# Security: Ollama needs network to pull models and serve the API,
+# but doesn't need to write anywhere outside its data dir.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ollama
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+
+# Pre-create the data directory and add the ollama user via an ExecStartPre
+# in a separate unit if needed. For now, we assume the customize_airootfs.sh
+# script handles user creation.
+
+[Install]
+WantedBy=multi-user.target

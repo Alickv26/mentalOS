@@ -1,0 +1,35 @@
+[Unit]
+Description=mentalOS workspace file watcher (monitors ~/workspaces for changes)
+Documentation=https://github.com/Alickv26/mentalOS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=user
+Group=user
+Environment=HOME=/home/user
+Environment=RUST_LOG=info
+# The watcher monitors workspace directories for create/modify/delete events
+# and notifies mentalOS so it can refresh its UI and trigger re-indexing.
+ExecStart=/usr/local/bin/mentalos-workspace-monitor
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# Security: the watcher needs read access to all workspaces and write
+# access only to its state directory under .mentalOS.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/user/workspaces/.mentalOS
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target

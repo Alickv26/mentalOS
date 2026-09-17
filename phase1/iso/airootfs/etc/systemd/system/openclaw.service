@@ -1,0 +1,35 @@
+[Unit]
+Description=OpenClaw AI gateway (HTTP backend for mentalOS)
+Documentation=https://github.com/Alickv26/mentalOS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=user
+Group=user
+# OpenClaw gateway listens on localhost:18789 by default.
+# --verbose enables request logging for debugging.
+Environment=HOME=/home/user
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/openclaw gateway --port 18789 --verbose
+Restart=on-failure
+RestartSec=2
+StartLimitBurst=5
+StartLimitIntervalSec=30
+
+# Security: gateway needs network for AI provider calls but doesn't need
+# filesystem access outside its workspace.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/user/workspaces /var/lib/mentalOS
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target

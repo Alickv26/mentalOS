@@ -6,6 +6,7 @@ ISO_PATH="${1:-}"
 AUTO_INSTALL_TOOLS="${AUTO_INSTALL_TOOLS:-1}"
 
 if [[ -z "${ISO_PATH}" ]]; then
+  # shellcheck disable=SC2012  # ls -1t is intentional — we want the most recently-built ISO
   ISO_PATH="$(ls -1t "${SCRIPT_DIR}/out"/*.iso 2>/dev/null | head -n 1 || true)"
 fi
 

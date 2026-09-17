@@ -131,6 +131,8 @@ impl ConfigWizard {
         // ── Save handler ──
         let config_for_save = Config::default();
         let dialog_ref = dialog.clone();
+        // Wrap on_complete in RefCell<Option<>> so we can take() it once inside the Fn closure
+        let on_complete_cell = std::cell::RefCell::new(Some(on_complete));
 
         save_btn.connect_clicked(move |_| {
             let provider_idx = provider_dropdown.selected() as usize;
@@ -183,7 +185,10 @@ impl ConfigWizard {
                 Ok(path) => {
                     info!("Configuration saved to {}", path.display());
                     dialog_ref.close();
-                    on_complete();
+                    // Take the callback out of the cell so it's only called once
+                    if let Some(cb) = on_complete_cell.borrow_mut().take() {
+                        cb();
+                    }
                 }
                 Err(e) => {
                     warn!("Failed to save configuration: {}", e);

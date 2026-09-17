@@ -92,6 +92,18 @@ window {
     box-shadow: 0 0 15px rgba(255, 158, 100, 0.4);
 }
 
+/* ─── Provider Label (omni pill sublabel) ────── */
+
+/* Small monospace text showing the active provider name
+   (openclaw, ollama, deepseek, zen) next to the status icon. */
+.provider-label {
+    font-size: 0.75rem;
+    font-family: monospace;
+    color: #7aa2f7;
+    opacity: 0.75;
+    padding: 0 4px;
+}
+
 /* ─── Input Area ─────────────────────────────── */
 .omni-input-box {
     padding: 12px 20px;

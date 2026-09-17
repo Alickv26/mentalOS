@@ -144,6 +144,27 @@ The OpenClaw launcher uses health-check polling with exponential backoff. If the
 
 If a provider fails multiple times consecutively, the circuit breaker opens and rejects requests for 30 seconds. This is a safety feature to prevent hammering a downed provider. After the cooldown, a single request is allowed through to test recovery.
 
+## Running Live Tests
+
+Some tests hit real provider backends and are skipped by default. Set the env var to `1` to run them:
+
+| Env var | Provider | Test file | Notes |
+|---------|----------|-----------|-------|
+| `MENTALOS_LIVE_OPENCLAW=1` | OpenClaw (HTTP or CLI) | `tests/live_openclaw.rs` | Requires OpenClaw binary or gateway running |
+| `MENTALOS_LIVE_OLLAMA=1` | Ollama | `tests/live_ollama.rs` | Requires `ollama serve` and a pulled model |
+| `MENTALOS_LIVE_DEEPSEEK=1` | DeepSeek cloud | `tests/live_deepseek.rs` | Requires `[deepseek] api_key` in config |
+| `MENTALOS_LIVE_ZEN=1` | OpenCode Zen | `tests/live_zen.rs` | Requires `[zen] api_key` in config |
+| `MENTALOS_ENABLE_SOCKET_TESTS=1` | Mock HTTP server | `tests/integration.rs`, `router::tests` | Spins up `httpmock` on localhost |
+
+Example:
+
+```sh
+export MENTALOS_LIVE_DEEPSEEK=1
+cargo test --no-default-features --test live_deepseek -- --nocapture
+```
+
+The `--nocapture` flag prints the provider's response text so you can verify the output manually.
+
 ## Privacy
 
 - **API keys** are stored locally in `~/.config/mentalOS/config.toml` and never shared

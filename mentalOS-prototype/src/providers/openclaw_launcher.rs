@@ -315,4 +315,97 @@ mod tests {
         let launcher = OpenClawLauncher::from_config(&config);
         assert!(!launcher.enabled);
     }
+
+    // ── Tests ported from the parallel session's openclaw_launcher.rs ──
+
+    #[test]
+    fn from_config_disabled_when_auto_start_off() {
+        let config = Config::default();
+        let launcher = OpenClawLauncher::from_config(&config);
+        assert!(!launcher.enabled);
+        assert!(launcher.child.is_none());
+    }
+
+    #[test]
+    fn from_config_enabled_when_auto_start_on_and_http_transport() {
+        let mut config = Config::default();
+        config.openclaw = crate::config::OpenClawConfig {
+            auto_start: true,
+            transport: "http".to_string(),
+            ..crate::config::OpenClawConfig::default()
+        };
+        let launcher = OpenClawLauncher::from_config(&config);
+        assert!(launcher.enabled);
+    }
+
+    #[test]
+    fn from_config_disabled_when_auto_start_on_but_cli_transport() {
+        let mut config = Config::default();
+        config.openclaw = crate::config::OpenClawConfig {
+            auto_start: true,
+            transport: "cli".to_string(),
+            ..crate::config::OpenClawConfig::default()
+        };
+        let launcher = OpenClawLauncher::from_config(&config);
+        assert!(!launcher.enabled);
+    }
+
+    #[test]
+    fn stop_is_safe_when_no_child() {
+        let config = Config::default();
+        let mut launcher = OpenClawLauncher::from_config(&config);
+        // Should not panic or error when there's no child process
+        let result = launcher.stop();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn kill_known_processes_does_not_panic() {
+        // Should gracefully handle pkill even if no matching processes
+        let result = OpenClawLauncher::kill_known_processes();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn endpoint_port_parses_valid_url() {
+        assert_eq!(endpoint_port("http://127.0.0.1:18789").unwrap(), 18789);
+        assert_eq!(endpoint_port("http://127.0.0.1:9999").unwrap(), 9999);
+    }
+
+    #[test]
+    fn endpoint_port_defaults_to_known_scheme_port() {
+        let port = endpoint_port("http://localhost").unwrap();
+        assert_eq!(port, 80);
+    }
+
+    #[test]
+    fn endpoint_port_rejects_invalid_url() {
+        assert!(endpoint_port("not a url").is_err());
+    }
+
+    #[test]
+    fn default_log_path_returns_path_based_on_home() {
+        let path = default_log_path();
+        assert!(path.to_string_lossy().contains(".local/share/mentalOS/logs"));
+    }
+
+    #[test]
+    fn open_log_file_creates_in_temp_dir() {
+        let dir = std::env::temp_dir().join("mentalos-test-logs");
+        let path = dir.join("test.log");
+        let _file = open_log_file(&path).expect("should open file");
+        assert!(path.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn endpoint_socket_addr_resolves_localhost() {
+        let addr = endpoint_socket_addr("http://127.0.0.1:18789").unwrap();
+        assert_eq!(addr.port(), 18789);
+    }
+
+    #[test]
+    fn endpoint_socket_addr_rejects_invalid() {
+        assert!(endpoint_socket_addr("://bad").is_err());
+    }
 }

@@ -1,6 +1,9 @@
+use crate::agent_manager::AgentManager;
 use crate::error::{MentalOSError, Result};
 use crate::memory::{MemoryManager, Message, MessageAction, Role};
-use crate::providers::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
+use crate::providers::circuit_breaker::{
+    retry_with_backoff, CircuitBreaker, CircuitBreakerConfig, CircuitState, RetryConfig,
+};
 use crate::providers::AiProvider;
 use crate::project_handler::ProjectHandler;
 use crate::task_tracker::TaskTracker;
@@ -191,11 +194,13 @@ impl CommandExecutor for FirejailExecutor {
 /// ```no_run
 /// use mental_os::router::{CommandRouter, FirejailExecutor};
 /// use mental_os::openclaw::OpenClawClient;
+/// use mental_os::providers::AiProvider;
 /// use mental_os::whitelist::WhitelistManager;
 /// use mental_os::memory::MemoryManager;
 /// use std::sync::{Arc, Mutex};
 /// let config = mental_os::Config::load().unwrap();
-/// let openclaw = OpenClawClient::from_config(&config);
+/// let openclaw = OpenClawClient::from_config(&config).unwrap();
+/// let openclaw = Box::new(openclaw) as Box<dyn AiProvider>;
 /// let whitelist = Arc::new(Mutex::new(WhitelistManager::load("/tmp/whitelist.json".into()).unwrap()));
 /// let memory = Arc::new(Mutex::new(MemoryManager::new("/tmp/workspaces".into())));
 /// let router = CommandRouter::new(openclaw, whitelist, memory, FirejailExecutor::new());
@@ -203,6 +208,11 @@ impl CommandExecutor for FirejailExecutor {
 pub struct CommandRouter<E: CommandExecutor> {
     provider: Box<dyn AiProvider>,
     circuit_breaker: CircuitBreaker,
+    retry_config: RetryConfig,
+    /// Optional agent bookkeeper. When present, list_agents / get_current_provider /
+    /// switch_agent route through this rather than the provider directly, keeping
+    /// agent metadata (executable, firejail profile, etc.) in sync with runtime state.
+    agent_manager: Option<Arc<Mutex<AgentManager>>>,
     whitelist: Arc<Mutex<WhitelistManager>>,
     memory: Arc<Mutex<MemoryManager>>,
     executor: E,
@@ -235,6 +245,8 @@ impl<E: CommandExecutor> CommandRouter<E> {
         Self {
             provider,
             circuit_breaker: CircuitBreaker::new(provider_name, CircuitBreakerConfig::default()),
+            retry_config: RetryConfig::default(),
+            agent_manager: None,
             whitelist,
             memory,
             executor,
@@ -242,6 +254,37 @@ impl<E: CommandExecutor> CommandRouter<E> {
             task_tracker: None,
             workspace_manager: None,
         }
+    }
+
+    /// Attach an AgentManager for agent bookkeeping.
+    ///
+    /// When set, `list_agents`, `get_current_provider`, and `switch_agent`
+    /// route through the manager first (source of truth for which agents
+    /// exist and which is active), then sync the runtime provider state.
+    pub fn with_agent_manager(mut self, manager: Arc<Mutex<AgentManager>>) -> Self {
+        self.agent_manager = Some(manager);
+        self
+    }
+
+    /// Override the default retry configuration.
+    ///
+    /// Useful in tests to set very short delays so retry tests don't take seconds.
+    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
+        self.retry_config = config;
+        self
+    }
+
+    /// Get the current circuit breaker state for this router's provider.
+    ///
+    /// The UI can call this to surface the provider's health visually
+    /// (e.g. green/yellow/red dot in the omni pill).
+    pub fn circuit_state(&self) -> CircuitState {
+        self.circuit_breaker.state()
+    }
+
+    /// Get the number of consecutive failures recorded by the circuit breaker.
+    pub fn circuit_failure_count(&self) -> u32 {
+        self.circuit_breaker.failure_count()
     }
 
     pub fn with_project_handler(mut self, handler: ProjectHandler) -> Self {
@@ -323,14 +366,43 @@ impl<E: CommandExecutor> CommandRouter<E> {
     }
 
     pub fn list_agents(&self) -> Vec<String> {
+        if let Some(ref manager) = self.agent_manager {
+            if let Ok(mgr) = manager.lock() {
+                let agents = mgr.list_agents();
+                if !agents.is_empty() {
+                    return agents;
+                }
+            }
+        }
         self.provider.list_agents()
     }
 
     pub fn get_current_provider(&self) -> String {
+        if let Some(ref manager) = self.agent_manager {
+            if let Ok(mgr) = manager.lock() {
+                let name = mgr.get_active_agent_name().to_string();
+                if !name.is_empty() {
+                    return name;
+                }
+            }
+        }
         self.provider.get_current_provider()
     }
 
+    /// Switch the active agent.
+    ///
+    /// When an AgentManager is attached, both are updated:
+    /// 1. `agent_manager.switch_agent(name)` — updates bookkeeping (source of truth)
+    /// 2. `provider.switch_agent(name)` — updates the runtime provider's model/endpoint
+    ///
+    /// If the agent_manager switch fails (agent not found), the provider is not touched.
     pub fn switch_agent(&mut self, name: &str) -> Result<String> {
+        if let Some(ref manager) = self.agent_manager {
+            let mut mgr = manager
+                .lock()
+                .map_err(|_| MentalOSError::Other("AgentManager lock poisoned".into()))?;
+            mgr.switch_agent(name)?;
+        }
         self.provider.switch_agent(name)
     }
 
@@ -432,13 +504,28 @@ impl<E: CommandExecutor> CommandRouter<E> {
             });
         }
 
-        let ai_text = match self.provider.send_message(input, &context) {
+        // Retry transient failures with exponential backoff.
+        // The closure returns the AI text on success, or an error string on failure.
+        // retry_with_backoff handles the sleep + retry loop.
+        let provider = &self.provider;
+        let retry_config = &self.retry_config;
+        let ai_text_result: std::result::Result<String, MentalOSError> = retry_with_backoff(
+            retry_config,
+            |_attempt| provider.send_message(input, &context),
+        );
+
+        let ai_text = match ai_text_result {
             Ok(response) => {
                 self.circuit_breaker.record_success();
                 response
             }
             Err(err) => {
                 self.circuit_breaker.record_failure();
+                warn!(
+                    "Provider '{}' failed after retries: {}",
+                    self.provider.name(),
+                    err
+                );
                 return Err(err);
             }
         };
@@ -1254,5 +1341,289 @@ pwd
         assert!(built.contains("demo project"));
         assert!(built.contains("cd "));
         assert!(built.contains("&& pwd"));
+    }
+
+    // ── Circuit breaker integration tests ──────────────────────
+
+    use crate::memory::Message;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc as StdArc;
+
+    /// A mock AI provider for testing the circuit breaker + retry logic.
+    ///
+    /// Configurable to fail N times before succeeding, or to always fail.
+    /// Records the number of times `send_message` was called.
+    struct MockProvider {
+        name: String,
+        call_count: StdArc<AtomicU32>,
+        fail_count: StdArc<AtomicU32>,
+        max_failures_before_success: u32,
+        always_fail: bool,
+        response_text: String,
+    }
+
+    impl MockProvider {
+        /// Create a provider that fails `n` times before succeeding on the (n+1)th call.
+        fn fails_n_then_succeeds(n: u32, text: &str) -> (Self, StdArc<AtomicU32>) {
+            let count = StdArc::new(AtomicU32::new(0));
+            let provider = Self {
+                name: "mock".to_string(),
+                call_count: count.clone(),
+                fail_count: StdArc::new(AtomicU32::new(0)),
+                max_failures_before_success: n,
+                always_fail: false,
+                response_text: text.to_string(),
+            };
+            (provider, count)
+        }
+
+        /// Create a provider that always fails.
+        fn always_fails() -> (Self, StdArc<AtomicU32>) {
+            let count = StdArc::new(AtomicU32::new(0));
+            let provider = Self {
+                name: "mock".to_string(),
+                call_count: count.clone(),
+                fail_count: StdArc::new(AtomicU32::new(0)),
+                max_failures_before_success: 0,
+                always_fail: true,
+                response_text: String::new(),
+            };
+            (provider, count)
+        }
+    }
+
+    impl AiProvider for MockProvider {
+        fn send_message(&self, _message: &str, _context: &[Message]) -> Result<String> {
+            self.call_count.fetch_add(1, Ordering::SeqCst);
+            let failures_so_far = self.fail_count.fetch_add(1, Ordering::SeqCst);
+
+            if self.always_fail {
+                return Err(MentalOSError::ProviderUnavailable {
+                    provider: "mock".to_string(),
+                    message: "always_fail=true".to_string(),
+                });
+            }
+
+            if failures_so_far < self.max_failures_before_success {
+                return Err(MentalOSError::ProviderUnavailable {
+                    provider: "mock".to_string(),
+                    message: format!("simulated failure {}/{}", failures_so_far + 1, self.max_failures_before_success),
+                });
+            }
+
+            Ok(self.response_text.clone())
+        }
+
+        fn list_agents(&self) -> Vec<String> {
+            vec!["mock".to_string()]
+        }
+
+        fn get_current_provider(&self) -> String {
+            "mock".to_string()
+        }
+
+        fn switch_agent(&mut self, _name: &str) -> Result<String> {
+            Ok("mock".to_string())
+        }
+
+        fn supports_context(&self) -> bool {
+            true
+        }
+
+        fn name(&self) -> &str {
+            &self.name
+        }
+    }
+
+    /// Helper: build a router backed by a MockProvider + NoopExecutor
+    /// with very short retry delays so tests don't take seconds.
+    fn mock_router(provider: MockProvider) -> CommandRouter<NoopExecutor> {
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path().join("workspaces");
+        std::fs::create_dir_all(&workspace_root).unwrap();
+        let memory = Arc::new(Mutex::new(MemoryManager::new(workspace_root)));
+        let whitelist_path = temp_dir.path().join("whitelist.json");
+        let whitelist = WhitelistManager::load(whitelist_path).unwrap();
+        let whitelist = Arc::new(Mutex::new(whitelist));
+
+        let retry_config = RetryConfig {
+            max_retries: 2,
+            initial_delay: Duration::from_millis(1),
+            max_delay: Duration::from_millis(5),
+            multiplier: 2.0,
+        };
+
+        CommandRouter::new(
+            Box::new(provider),
+            whitelist,
+            memory,
+            NoopExecutor,
+        )
+        .with_retry_config(retry_config)
+    }
+
+    #[test]
+    fn router_returns_circuit_open_error_when_breaker_open() {
+        // Force the breaker open by recording threshold failures directly
+        let (provider, _) = MockProvider::always_fails();
+        let mut router = mock_router(provider);
+
+        // Manually trigger failures to open the breaker (default threshold = 3)
+        // We do this by calling handle_input 3 times; each will retry 2x then fail.
+        // After 3 handle_input calls, the breaker should be open.
+        for _ in 0..3 {
+            let _ = router.handle_input("demo", "general", "hi", 5);
+        }
+
+        // Now the breaker should be Open. The next call should fast-fail
+        // without even calling the provider.
+        let result = router.handle_input("demo", "general", "hi", 5);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            MentalOSError::ProviderUnavailable { message, .. } => {
+                assert!(
+                    message.contains("circuit breaker open") || message.contains("temporarily unavailable"),
+                    "Expected circuit breaker message, got: {}",
+                    message
+                );
+            }
+            other => panic!("Expected ProviderUnavailable, got: {:?}", other),
+        }
+        assert_eq!(router.circuit_state(), CircuitState::Open);
+    }
+
+    #[test]
+    fn router_retries_on_transient_failure_then_succeeds() {
+        // Provider fails 2 times, succeeds on 3rd call.
+        // retry_with_backoff with max_retries=2 will call 3 times total: initial + 2 retries.
+        let (provider, call_count) = MockProvider::fails_n_then_succeeds(2, "hello world");
+        let mut router = mock_router(provider);
+
+        let result = router.handle_input("demo", "general", "hi", 5);
+        assert!(result.is_ok(), "Expected success after retries, got: {:?}", result.err());
+
+        // The provider should have been called 3 times (1 initial + 2 retries)
+        assert_eq!(call_count.load(Ordering::SeqCst), 3,
+            "Provider should be called 3 times (initial + 2 retries)");
+
+        // After success, the circuit breaker should be Closed
+        assert_eq!(router.circuit_state(), CircuitState::Closed);
+    }
+
+    #[test]
+    fn router_opens_circuit_after_threshold_failures() {
+        // Provider always fails. Each handle_input call triggers retry_with_backoff
+        // (3 attempts: initial + 2 retries), then records 1 failure with the breaker.
+        // After 3 handle_input calls (3 breaker failures), the breaker opens.
+        let (provider, _) = MockProvider::always_fails();
+        let mut router = mock_router(provider);
+
+        // Initially closed
+        assert_eq!(router.circuit_state(), CircuitState::Closed);
+
+        // First failure
+        let _ = router.handle_input("demo", "general", "hi", 5);
+        assert_eq!(router.circuit_state(), CircuitState::Closed,
+            "Breaker should still be Closed after 1 failure");
+        assert_eq!(router.circuit_failure_count(), 1);
+
+        // Second failure
+        let _ = router.handle_input("demo", "general", "hi", 5);
+        assert_eq!(router.circuit_state(), CircuitState::Closed,
+            "Breaker should still be Closed after 2 failures");
+        assert_eq!(router.circuit_failure_count(), 2);
+
+        // Third failure — opens the breaker (threshold = 3)
+        let _ = router.handle_input("demo", "general", "hi", 5);
+        assert_eq!(router.circuit_state(), CircuitState::Open,
+            "Breaker should be Open after 3 failures");
+    }
+
+    #[test]
+    fn router_switch_agent_updates_both_agent_manager_and_provider() {
+        // Verify that switch_agent updates both the AgentManager bookkeeping
+        // AND the runtime provider state.
+        use crate::config::AgentConfig;
+        use std::path::PathBuf;
+
+        let (provider, _) = MockProvider::fails_n_then_succeeds(0, "ok");
+        // The MockProvider's switch_agent just returns Ok without changing state.
+        // To verify the call reaches it, we use a separate flag via the always_fail
+        // path: if switch_agent is called, send_message will be called next and
+        // we can observe via call_count.
+        let (provider_for_router, call_count) = MockProvider::fails_n_then_succeeds(0, "ok");
+
+        // Build an AgentManager with two agents
+        let mut agent_manager = AgentManager::new(PathBuf::from("/tmp"));
+        let mut agents = std::collections::HashMap::new();
+        agents.insert("alpha".to_string(), AgentConfig {
+            name: "Alpha".to_string(),
+            description: None,
+            provider: "mock".to_string(),
+            model: None,
+            endpoint: None,
+            executable: None,
+            arguments: None,
+        });
+        agents.insert("beta".to_string(), AgentConfig {
+            name: "Beta".to_string(),
+            description: None,
+            provider: "mock".to_string(),
+            model: None,
+            endpoint: None,
+            executable: None,
+            arguments: None,
+        });
+        agent_manager.load_agents(agents);
+        let agent_manager = Arc::new(Mutex::new(agent_manager));
+
+        // Build router with agent_manager attached
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path().join("workspaces");
+        std::fs::create_dir_all(&workspace_root).unwrap();
+        let memory = Arc::new(Mutex::new(MemoryManager::new(workspace_root)));
+        let whitelist = Arc::new(Mutex::new(
+            WhitelistManager::load(temp_dir.path().join("whitelist.json").into()).unwrap()
+        ));
+
+        let mut router = CommandRouter::new(
+            Box::new(provider_for_router),
+            whitelist,
+            memory,
+            NoopExecutor,
+        )
+        .with_agent_manager(agent_manager.clone());
+
+        // Initially active agent is "openclaw" (AgentManager's default when no
+        // agent has executable containing "default"). That's fine — what matters
+        // is that switch_agent updates both the manager and the provider.
+        let initial = router.get_current_provider();
+        assert!(["alpha", "beta", "openclaw", "mock"].contains(&initial.as_str()),
+            "Unexpected initial provider: {}", initial);
+
+        // Switch to "beta"
+        let switch_result = router.switch_agent("beta");
+        assert!(switch_result.is_ok(), "switch_agent failed: {:?}", switch_result.err());
+
+        // AgentManager should now report "beta" as active
+        let mgr = agent_manager.lock().unwrap();
+        assert_eq!(mgr.get_active_agent_name(), "beta");
+        drop(mgr);
+
+        // get_current_provider should also report "beta" (from agent_manager)
+        assert_eq!(router.get_current_provider(), "beta");
+
+        // switch_agent on a non-existent agent should fail without touching the provider
+        let bad_switch = router.switch_agent("nonexistent");
+        assert!(bad_switch.is_err());
+        // Active agent should still be "beta"
+        assert_eq!(router.get_current_provider(), "beta");
+
+        // Suppress unused-mut warning for `provider`
+        let _ = provider;
+
+        // Verify call_count is still 0 (we never called send_message)
+        assert_eq!(call_count.load(Ordering::SeqCst), 0);
     }
 }

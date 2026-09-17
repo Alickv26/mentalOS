@@ -315,6 +315,17 @@ impl MainWindow {
                     }
                     BackendResponse::ProviderHealth { provider, healthy } => {
                         app_bar_ref.set_provider_health(&provider, Some(healthy));
+                        // Update the omni pill's provider label and circuit state indicator.
+                        // `healthy` is the combined verdict (provider.is_healthy() && breaker != Open);
+                        // when unhealthy, the pill shows a red dot via set_circuit_state(Open).
+                        pill_ref.set_provider(&provider);
+                        if healthy {
+                            pill_ref.set_state(AiState::Sleep);
+                        } else {
+                            pill_ref.set_circuit_state(
+                                crate::ui::omni_pill::CircuitState::Open,
+                            );
+                        }
                     }
                 }
             }

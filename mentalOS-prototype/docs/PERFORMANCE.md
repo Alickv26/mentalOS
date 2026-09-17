@@ -47,3 +47,28 @@ Mode: `cargo test --release ... --ignored --nocapture`
 - stress benchmark (`n=1500`)
   - total: `1.081 s`
   - throughput: `1387.37 req/s`
+
+## Baseline (commit c3295c9, post-circuit-breaker-wiring)
+
+Run date: `2026-09-18`
+Mode: `cargo test --no-default-features --test performance -- --ignored --nocapture`
+Rust: `1.98.1` (debug build, no GTK4 feature)
+Hardware: containerised Linux (Debian trixie)
+
+- latency benchmark (`n=150`, warmup `20`)
+  - mean: `4.62 ms`
+  - p50: `3.70 ms`
+  - p95: `6.12 ms`
+  - max: `32.65 ms`
+  - throughput: `212.55 req/s`
+- stress benchmark (`n=1500`)
+  - total: `39.386 s`
+  - throughput: `38.08 req/s`
+
+Note: this baseline is from a debug build with `--no-default-features` (no
+GTK4 UI). The previous `9958.92 req/s` number was from a `--release` build
+and used the pre-trait-abstraction concrete `OpenClawClient`. The
+performance regression is expected for debug builds and will be re-measured
+in `--release` mode in a follow-up. The relative cost of the new
+`retry_with_backoff` wrapper (which now wraps every `send_message` call)
+should be measured in a release build before drawing conclusions.

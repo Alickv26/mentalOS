@@ -1,6 +1,9 @@
 use gtk4::prelude::*;
 use gtk4::{Box, Button, DropDown, Entry, Label, Orientation, Spinner, StringList};
 
+// Re-export CircuitState so callers don't need to import the providers module
+pub use crate::providers::circuit_breaker::CircuitState;
+
 /// The visual state of the AI Agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AiState {
@@ -30,6 +33,18 @@ impl AiState {
     }
 }
 
+/// Maps a circuit breaker state to a status icon override.
+///
+/// Returns `Some(icon)` when the breaker is non-Closed (to override the
+/// normal AiState icon), or `None` when Closed (let the AiState show through).
+fn circuit_state_icon(state: CircuitState) -> Option<&'static str> {
+    match state {
+        CircuitState::Closed => None,
+        CircuitState::Open => Some("🔴"),
+        CircuitState::HalfOpen => Some("🟡"),
+    }
+}
+
 /// The Omni-Pill input component.
 pub struct OmniPill {
     pub container: Box,
@@ -39,6 +54,9 @@ pub struct OmniPill {
     pub term_btn: Button,
     pub agent_selector: DropDown,
     status_icon: Label,
+    /// Sublabel under the status icon showing the active provider name
+    /// (e.g. "openclaw", "deepseek", "zen", "ollama").
+    provider_label: Label,
     stop_btn: Button,
 }
 
@@ -58,6 +76,19 @@ impl OmniPill {
             ),
         ]);
         container.append(&status_icon);
+
+        // Provider label (small text under the status icon showing the
+        // active provider name — "openclaw", "deepseek", "zen", "ollama")
+        let provider_label = Label::new(Some(""));
+        provider_label.add_css_class("provider-label");
+        provider_label.set_accessible_role(gtk4::AccessibleRole::Label);
+        provider_label.update_property(&[
+            gtk4::accessible::Property::Label("Active provider"),
+            gtk4::accessible::Property::Description(
+                "Shows which AI provider is currently active (openclaw, ollama, deepseek, or zen).",
+            ),
+        ]);
+        container.append(&provider_label);
 
         // Spinner (hidden by default)
         let spinner = Spinner::new();
@@ -141,6 +172,7 @@ impl OmniPill {
             term_btn,
             agent_selector,
             status_icon,
+            provider_label,
             stop_btn,
         }
     }
@@ -159,6 +191,38 @@ impl OmniPill {
                 self.status_icon.set_visible(true);
             }
         }
+    }
+
+    /// Update the small text label showing the active provider's name.
+    ///
+    /// Call this whenever the provider changes (config wizard save, agent
+    /// switch, or on app startup once the router is constructed).
+    pub fn set_provider(&self, name: &str) {
+        self.provider_label.set_text(name);
+        let desc = format!("Active AI provider: {}", name);
+        self.provider_label
+            .update_property(&[gtk4::accessible::Property::Description(desc.as_str())]);
+    }
+
+    /// Update the status icon to reflect the circuit breaker state.
+    ///
+    /// - `Closed`: the normal AiState icon is shown (⚪/🔵/🔮/🟠)
+    /// - `HalfOpen`: yellow dot 🟡 (provider is being tested for recovery)
+    /// - `Open`: red dot 🔴 (provider is temporarily unavailable)
+    ///
+    /// Call this after every `handle_input` call so the UI reflects the
+    /// current breaker state in real time.
+    pub fn set_circuit_state(&self, state: CircuitState) {
+        // We can't mutate self.last_circuit_state from &self, but the icon
+        // override logic below is stateless — it just picks the right icon
+        // for the given state on each call.
+        if let Some(override_icon) = circuit_state_icon(state) {
+            self.status_icon.set_text(override_icon);
+            self.status_icon.set_visible(true);
+            self.spinner.stop();
+            self.spinner.set_visible(false);
+        }
+        // When Closed, the next set_state() call will restore the normal icon.
     }
 
     pub fn connect_stop_clicked<F: Fn(&Button) + 'static>(&self, f: F) {

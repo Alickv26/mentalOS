@@ -1,5 +1,6 @@
 use gtk4::prelude::*;
 use gtk4::{Application, CssProvider, gdk};
+use mental_os::agent_manager::AgentManager;
 use mental_os::config::{Config, config_path};
 use mental_os::memory::MemoryManager;
 use mental_os::providers;
@@ -97,7 +98,7 @@ fn main() {
             // Only create and start the OpenClaw launcher when the configured provider is OpenClaw.
             // Cloud providers (DeepSeek, Zen) don't need a local gateway process.
             let mut openclaw_launcher = if provider_name == "openclaw" {
-                let launcher = OpenClawLauncher::from_config(&config);
+                let mut launcher = OpenClawLauncher::from_config(&config);
                 if let Err(err) = launcher.ensure_running() {
                     log::warn!("OpenClaw launcher startup check failed: {}", err);
                 }
@@ -122,12 +123,25 @@ fn main() {
             let task_tracker = TaskTracker::new(workspace_dir.clone());
             let workspace_manager = WorkspaceManager::new(workspace_dir);
 
+            // Build the agent manager and load configured agents from config.
+            // This is the source of truth for which agents exist + which is active.
+            // The router delegates list_agents / get_current_provider / switch_agent
+            // to it, then syncs the runtime provider state.
+            let config_dir_for_agents = config_path()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                .unwrap_or_else(|| PathBuf::from("/tmp"));
+            let mut agent_manager = AgentManager::new(config_dir_for_agents);
+            agent_manager.load_agents(config.agents.clone());
+            let agent_manager = Arc::new(Mutex::new(agent_manager));
+
             let mut router = CommandRouter::new(
                 openclaw,
                 whitelist,
                 memory,
                 executor,
             )
+            .with_agent_manager(agent_manager)
             .with_project_handler(project_handler)
             .with_task_tracker(task_tracker)
             .with_workspace_manager(workspace_manager);
@@ -334,7 +348,7 @@ fn main() {
             let handshake_for_wizard = handshake_tx.clone();
             let ui_tx_for_wizard = ui_tx.clone();
             let win_for_onboarding_from_wizard = win_for_onboarding.clone();
-            ConfigWizard::show(&win.window, move || {
+            ConfigWizard::show(win.window.upcast_ref::<gtk4::Window>(), move || {
                 if let Some(tx) = handshake_for_wizard.borrow_mut().take()
                     && let Err(err) = tx.send(ui_tx_for_wizard.clone())
                 {

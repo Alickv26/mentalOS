@@ -9,6 +9,8 @@ OUT_DIR="${PROFILE_DIR}/out"
 WORK_DIR="${WORK_DIR:-${PROFILE_DIR}/work}"
 DEFAULT_BINARY_PATH="${PROTO_DIR}/target/release/mentalOS"
 BINARY_PATH="${MENTALOS_BINARY:-${DEFAULT_BINARY_PATH}}"
+DEFAULT_WORKSPACE_MONITOR_PATH="${PROTO_DIR}/target/release/mentalos-workspace-monitor"
+WORKSPACE_MONITOR_BINARY_PATH="${MENTALOS_WORKSPACE_MONITOR_BINARY:-${DEFAULT_WORKSPACE_MONITOR_PATH}}"
 USE_EXISTING_BINARY="${USE_EXISTING_BINARY:-1}"
 FORCE_REBUILD="${FORCE_REBUILD:-0}"
 AUTO_INSTALL_TOOLS="${AUTO_INSTALL_TOOLS:-1}"
@@ -58,18 +60,18 @@ require_tools() {
 
 build_binary_if_needed() {
   if [[ "${FORCE_REBUILD}" == "1" ]]; then
-    log "FORCE_REBUILD=1, rebuilding mentalOS release binary"
-    cargo build --manifest-path "${PROTO_DIR}/Cargo.toml" --release
+    log "FORCE_REBUILD=1, rebuilding mentalOS release binaries"
+    cargo build --manifest-path "${PROTO_DIR}/Cargo.toml" --release --bin mentalOS --bin mentalos-workspace-monitor
     return
   fi
 
-  if [[ "${USE_EXISTING_BINARY}" == "1" && -x "${BINARY_PATH}" ]]; then
-    log "Using existing binary: ${BINARY_PATH}"
+  if [[ "${USE_EXISTING_BINARY}" == "1" && -x "${BINARY_PATH}" && -x "${WORKSPACE_MONITOR_BINARY_PATH}" ]]; then
+    log "Using existing binaries: ${BINARY_PATH}, ${WORKSPACE_MONITOR_BINARY_PATH}"
     return
   fi
 
-  log "Building mentalOS release binary"
-  cargo build --manifest-path "${PROTO_DIR}/Cargo.toml" --release
+  log "Building mentalOS release binaries (mentalOS + mentalos-workspace-monitor)"
+  cargo build --manifest-path "${PROTO_DIR}/Cargo.toml" --release --bin mentalOS --bin mentalos-workspace-monitor
 }
 
 stage_binary() {
@@ -79,6 +81,13 @@ stage_binary() {
   fi
   log "Staging mentalOS binary into airootfs"
   install -Dm0755 "${BINARY_PATH}" "${PROFILE_DIR}/airootfs/usr/local/bin/mentalOS"
+
+  if [[ ! -x "${WORKSPACE_MONITOR_BINARY_PATH}" ]]; then
+    echo "Expected binary not found or not executable: ${WORKSPACE_MONITOR_BINARY_PATH}" >&2
+    exit 1
+  fi
+  log "Staging mentalos-workspace-monitor binary into airootfs"
+  install -Dm0755 "${WORKSPACE_MONITOR_BINARY_PATH}" "${PROFILE_DIR}/airootfs/usr/local/bin/mentalos-workspace-monitor"
 }
 
 stage_installer_assets() {
@@ -97,6 +106,7 @@ cleanup_stage() {
     return
   fi
   rm -f "${PROFILE_DIR}/airootfs/usr/local/bin/mentalOS"
+  rm -f "${PROFILE_DIR}/airootfs/usr/local/bin/mentalos-workspace-monitor"
   rm -rf "${INSTALLER_STAGE_DIR}"
 }
 

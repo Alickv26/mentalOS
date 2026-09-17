@@ -14,7 +14,7 @@ Phase 1 tracks the transition from prototype app to bootable mentalOS system art
 
 ## Milestone 1.3 (CI + validation)
 
-- Profile structure validator: `iso/validate-profile.sh` (92 checks across profile, packages, bootloaders, shell scripts, and systemd service units)
+- Profile structure validator: `iso/validate-profile.sh` (91 checks across profile, packages, bootloaders, shell scripts, and systemd service units)
 - CI workflow: `.github/workflows/phase1-validate.yml` (shellcheck + profile validation + package audit + config template audit + service unit audit)
 
 ## Milestone 1.4 (boot polish)
@@ -33,7 +33,7 @@ and are enabled by `customize_airootfs.sh` at ISO build time:
 | `mentalOS.service` | system | `user` | Main GTK4 app — starts after `graphical.target`, Wants openclaw + ollama |
 | `openclaw.service` | system | `user` | OpenClaw gateway HTTP backend (port 18789) |
 | `ollama.service` | system | `ollama` | Local Ollama LLM server (port 11434, models in `/var/lib/ollama/models`) |
-| `workspace-monitor.service` | system | `user` | File watcher for `~/workspaces` (placeholder bash script; uses `inotifywait` if available, falls back to polling) |
+| `workspace-monitor.service` | system | `user` | File watcher for `~/workspaces` — Rust binary (`mentalos-workspace-monitor`) that writes JSON Lines to `~/workspaces/.mentalOS/events.jsonl` |
 
 All four services:
 - Auto-restart on failure (`Restart=on-failure`, `StartLimitBurst=5`)
@@ -42,7 +42,9 @@ All four services:
 
 `customize_airootfs.sh` also pre-creates the `ollama` system user, the `/var/lib/ollama` data directory, and the `~/workspaces/.mentalOS` state directory.
 
-`validate-profile.sh` now runs 92 checks (up from 51) — added a new "Systemd service units" section that verifies each service has `[Unit]`, `[Service]`, `[Install]`, Description, ExecStart, Restart, WantedBy, and that mentalOS.service has the correct dependency chain (`Wants=openclaw.service ollama.service`, `After=graphical.target`, `WantedBy=graphical.target`).
+The `mentalos-workspace-monitor` binary is built from `mentalOS-prototype/src/bin/workspace_monitor.rs` (Rust, uses the `notify` crate for cross-platform file watching). `build-iso.sh` builds and stages it alongside the main `mentalOS` binary at ISO build time — no separate build step required.
+
+`validate-profile.sh` now runs 91 checks (up from 51) — added a new "Systemd service units" section that verifies each service has `[Unit]`, `[Service]`, `[Install]`, Description, ExecStart, Restart, WantedBy, and that mentalOS.service has the correct dependency chain (`Wants=openclaw.service ollama.service`, `After=graphical.target`, `WantedBy=graphical.target`).
 
 ## Suggested Next Steps
 
@@ -53,9 +55,9 @@ All four services:
    can't run `mkarchiso` directly — the `phase1-validate.yml` CI catches
    structure errors, but only `build-iso.sh` on Arch can produce the image).
 3. **Run `test-qemu.sh`** on a KVM-capable host to validate boot flow.
-4. **Replace `mentalos-workspace-monitor` with a real Rust binary** that
-   forwards inotify events to mentalOS via the backend channel — currently
-   it just logs events to `~/workspaces/.mentalOS/workspace-monitor.log`.
+4. **Wire `events.jsonl` into mentalOS** — add a `notify` watcher in the
+   mentalOS GTK app that tails `~/workspaces/.mentalOS/events.jsonl` and
+   triggers a UI refresh when new workspace files are detected.
 5. **Start Milestone 1.6** — persistent overlay (live USB with `cow` or
    `overlay` mode) so changes survive reboot on a live stick.
 

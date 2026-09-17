@@ -45,7 +45,6 @@ required_files=(
     "airootfs/root/customize_airootfs.sh"
     "airootfs/usr/local/bin/mentalos-install"
     "airootfs/usr/local/bin/mentalos-launch"
-    "airootfs/usr/local/bin/mentalos-workspace-monitor"
     "airootfs/etc/systemd/system/mentalOS.service"
     "airootfs/etc/systemd/system/openclaw.service"
     "airootfs/etc/systemd/system/ollama.service"
@@ -58,6 +57,12 @@ required_files=(
     "syslinux/syslinux-linux.cfg"
 )
 
+# Note: mentalos-workspace-monitor binary is NOT in the airootfs tree —
+# it's a Rust binary built by build-iso.sh and staged at build time.
+# Check for its source in the prototype crate instead.
+REPO_ROOT="$(cd "${PROFILE_DIR}/../.." && pwd)"
+WORKSPACE_MONITOR_SRC="${REPO_ROOT}/mentalOS-prototype/src/bin/workspace_monitor.rs"
+
 for f in "${required_files[@]}"; do
     if [[ -f "${PROFILE_DIR}/${f}" ]]; then
         ok "${f}"
@@ -65,6 +70,21 @@ for f in "${required_files[@]}"; do
         err "missing required file: ${f}"
     fi
 done
+
+# mentalos-workspace-monitor is a Rust binary built by build-iso.sh —
+# check its source exists in the prototype crate.
+if [[ -f "${WORKSPACE_MONITOR_SRC}" ]]; then
+    ok "mentalos-workspace-monitor.rs source present"
+else
+    err "missing mentalos-workspace-monitor.rs at ${WORKSPACE_MONITOR_SRC}"
+fi
+
+# Check that build-iso.sh stages the workspace-monitor binary
+if grep -q 'mentalos-workspace-monitor' "${PROFILE_DIR}/build-iso.sh" 2>/dev/null; then
+    ok "build-iso.sh stages mentalos-workspace-monitor"
+else
+    err "build-iso.sh should stage mentalos-workspace-monitor"
+fi
 
 # ─── profiledef.sh ──────────────────────────────────────────
 
@@ -338,7 +358,6 @@ shell_scripts=(
     "airootfs/root/customize_airootfs.sh"
     "airootfs/usr/local/bin/mentalos-install"
     "airootfs/usr/local/bin/mentalos-launch"
-    "airootfs/usr/local/bin/mentalos-workspace-monitor"
     "build-iso.sh"
     "test-qemu.sh"
     "validate-profile.sh"

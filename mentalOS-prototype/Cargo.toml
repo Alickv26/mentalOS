@@ -12,6 +12,10 @@ name = "mentalOS"
 path = "src/main.rs"
 required-features = ["gtk4-ui"]
 
+[[bin]]
+name = "mentalos-workspace-monitor"
+path = "src/bin/workspace_monitor.rs"
+
 [dependencies]
 glib = { version = "0.18", optional = true }
 gtk4 = { version = "0.7.3", optional = true }
@@ -30,6 +34,9 @@ shell-words = "1"
 sysinfo = "0.31"
 wait-timeout = "0.2"
 async-channel = "2"
+# Cross-platform file watcher used by the mentalos-workspace-monitor binary.
+# Note: notify 6.x requires Rust 1.69+; we're on stable so this is fine.
+notify = "6"
 
 [dev-dependencies]
 tempfile = "3"

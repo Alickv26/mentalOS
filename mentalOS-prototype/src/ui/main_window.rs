@@ -327,6 +327,17 @@ impl MainWindow {
                         //   Open → red dot 🔴 (provider temporarily unavailable)
                         pill_ref.set_circuit_state(state);
                     }
+                    BackendResponse::WorkspaceEvent(event) => {
+                        // A file-change event from the workspace-monitor service.
+                        // For now we just log it — a follow-up will refresh the
+                        // memory browser / project list when one of these arrives.
+                        log::info!(
+                            "Workspace event: {} {} {}",
+                            event.timestamp,
+                            event.kind,
+                            event.paths.join(", ")
+                        );
+                    }
                 }
             }
         });

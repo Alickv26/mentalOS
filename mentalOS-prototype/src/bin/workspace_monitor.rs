@@ -2,8 +2,8 @@
 //! forwards events as JSON Lines to `~/workspaces/.mentalOS/events.jsonl`.
 //!
 //! Run as a systemd service (`workspace-monitor.service`). The mentalOS GTK
-//! app can later add a file watcher on `events.jsonl` to refresh its UI in
-//! real time when the user edits files in a workspace.
+//! app's `workspace_events` module tails that file and forwards events to
+//! the UI for live refresh.
 //!
 //! # Output files
 //!
@@ -23,26 +23,15 @@
 
 use chrono::Utc;
 use log::{info, warn};
+use mental_os::workspace_events::WorkspaceEvent;
 use notify::event::{Event, EventKind};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use serde::Serialize;
 use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
-
-/// A single file-change event, serialised as one JSON object per line.
-#[derive(Debug, Serialize)]
-struct WorkspaceEvent {
-    /// ISO 8601 timestamp (UTC) when the event was observed.
-    timestamp: String,
-    /// Event kind: create, modify, delete, move, access, other.
-    kind: &'static str,
-    /// One or more affected paths (relative to watch root when possible).
-    paths: Vec<String>,
-}
 
 fn main() {
     // Initialise logging to stderr so journald picks it up.
@@ -170,7 +159,8 @@ fn format_event(event: &Event, watch_root: &Path) -> WorkspaceEvent {
         EventKind::Access(_) => "access",
         EventKind::Any => "any",
         _ => "other",
-    };
+    }
+    .to_string();
 
     let paths = event
         .paths
@@ -291,7 +281,7 @@ mod tests {
     fn workspace_event_serialises_to_json() {
         let event = WorkspaceEvent {
             timestamp: "2026-09-18T12:34:56.789Z".to_string(),
-            kind: "create",
+            kind: "create".to_string(),
             paths: vec!["demo/main.rs".to_string()],
         };
         let json = serde_json::to_string(&event).unwrap();
@@ -307,12 +297,12 @@ mod tests {
 
         let e1 = WorkspaceEvent {
             timestamp: "2026-09-18T12:00:00Z".to_string(),
-            kind: "create",
+            kind: "create".to_string(),
             paths: vec!["a.txt".to_string()],
         };
         let e2 = WorkspaceEvent {
             timestamp: "2026-09-18T12:00:01Z".to_string(),
-            kind: "modify",
+            kind: "modify".to_string(),
             paths: vec!["b.txt".to_string()],
         };
         append_event(path, &e1).unwrap();
@@ -329,7 +319,7 @@ mod tests {
     fn human_readable_includes_all_paths() {
         let event = WorkspaceEvent {
             timestamp: "2026-09-18T12:00:00Z".to_string(),
-            kind: "modify",
+            kind: "modify".to_string(),
             paths: vec!["a.txt".to_string(), "b.txt".to_string()],
         };
         let s = human_readable(&event);

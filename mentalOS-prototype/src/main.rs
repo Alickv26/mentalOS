@@ -78,6 +78,16 @@ fn main() {
                 Config::default()
             });
 
+            // Spawn the workspace-events tailer thread now that ui_tx is
+            // available. This tails ~/workspaces/.mentalOS/events.jsonl
+            // (written by the mentalos-workspace-monitor systemd service)
+            // and forwards parsed events to the UI.
+            let workspace_dir_for_tailer = expand_home_path(&config.paths.workspace_dir);
+            mental_os::workspace_events::spawn_tailer(
+                workspace_dir_for_tailer,
+                ui_tx.clone(),
+            );
+
             // Determine Whitelist Path
             // Try to use standard config dir, otherwise fallback to /tmp
             let whitelist_path = config_path()
@@ -145,6 +155,17 @@ fn main() {
             .with_project_handler(project_handler)
             .with_task_tracker(task_tracker)
             .with_workspace_manager(workspace_manager);
+
+            // Spawn the workspace-events tailer. This thread tails
+            // ~/workspaces/.mentalOS/events.jsonl (written by the
+            // mentalos-workspace-monitor systemd service) and forwards each
+            // parsed event to the UI via ui_tx. The ui_tx is captured via
+            // the handshake below — we defer the spawn until after the
+            // handshake completes.
+            //
+            // Note: ui_tx isn't available yet here (it's set by the GTK
+            // handshake below). We'll spawn the tailer inside the handshake
+            // block where ui_tx is in scope.
 
             while let Some(req) = backend_rx.recv().await {
                 match req {

@@ -12,6 +12,7 @@ pub mod task_tracker;
 pub mod ui;
 pub mod whitelist;
 pub mod workspace;
+pub mod workspace_events;
 
 pub use agent_manager::{AgentManager, AgentStatus};
 pub use config::Config;

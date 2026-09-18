@@ -81,6 +81,13 @@ pub enum BackendResponse {
     /// current breaker state in real time (Closed = normal, Open = red dot,
     /// HalfOpen = yellow dot).
     CircuitStateChanged(CircuitState),
+    /// A workspace file-change event from the workspace-monitor service.
+    ///
+    /// The `mentalos-workspace-monitor` systemd service writes JSON Lines
+    /// to `~/workspaces/.mentalOS/events.jsonl`. The `workspace_events`
+    /// module tails that file and forwards each parsed event here. The
+    /// UI can use this to refresh project lists, memory browser, etc.
+    WorkspaceEvent(crate::workspace_events::WorkspaceEvent),
 }
 
 /// Re-export CircuitState so message consumers don't need a separate import.

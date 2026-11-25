@@ -60,4 +60,67 @@ Build options:
 ## Notes
 
 - This is a kickoff profile; bootloader themes/syslinux customization can be expanded next.
-- `build-iso.sh` auto-installs missing `archiso`/`rsync` packages when possible.
+- `build-iso.sh` auto-installs missing `archiso`/`rsync`/`squashfs-tools` packages when possible.
+
+## Build prerequisites
+
+Host packages needed to build:
+
+```bash
+sudo pacman -S --needed archiso rsync squashfs-tools base-devel rust pkgconf gtk4
+```
+
+- `squashfs-tools` provides `unsquashfs`, which the post-build verification requires.
+- `rust`, `pkgconf`, `gtk4` (headers included in the Arch/Manjaro package) are needed
+  to compile the mentalOS GTK4 binaries.
+
+## Build-time diagnostics (new)
+
+Every build now leaves evidence behind:
+
+- `out/build.log` — full `mkarchiso` output plus build environment (host OS,
+  archiso version, repo commit). Read this first when a build fails or
+  misbehaves.
+- `out/squashfs-listing.txt` — complete listing of the squashfs contents.
+- `work/x86_64/airootfs/` — the work tree mkarchiso actually built from. It
+  persists after the build, so you can inspect what really landed.
+- Preflight checks run **before** mkarchiso: if any staged or overlay file is
+  missing, the build stops immediately with a list of what is absent.
+
+### Verification result meanings
+
+- **`VERIFICATION FAILED: N expected file(s) missing`** — the squashfs listing
+  was healthy (reference files like `usr/bin/bash` were present) but mentalOS
+  content is genuinely absent. Check `out/build.log` for the lines
+  `Copying custom airootfs files`, `Running customize_airootfs.sh` and
+  `Creating SquashFS image` — whichever is missing is the step that failed.
+- **`VERIFICATION INCONCLUSIVE`** — the verification itself could not read the
+  squashfs (missing `unsquashfs`, failed loop mount, unsupported compression,
+  or truncated ISO). The ISO may still be fine; fix the tool problem and
+  re-check, or boot-test it.
+
+## Manjaro build hosts (branding)
+
+The profile's `pacman.conf` uses the host's mirrorlist. Building on Manjaro
+therefore produces a Manjaro-based airootfs: the login banner previously said
+"Manjaro Linux". `customize_airootfs.sh` now overrides `/etc/os-release`,
+`/etc/issue`, `/etc/hostname` and `/etc/motd` at build time, so the image
+identifies as mentalOS regardless of the host. `uname -r` still reports the
+Manjaro-built kernel string — that is cosmetic. For a pure-Arch image, build
+inside an `archlinux` container.
+
+## Service enablement (robustness)
+
+The four systemd services are enabled through **committed**
+`airootfs/etc/systemd/system/*.target.wants/` symlinks (copied into the image
+by mkarchiso unconditionally), with `sysusers.d`/`tmpfiles.d` fragments as
+boot-time fallbacks for the runtime users and directories. The deprecated
+`customize_airootfs.sh` still runs and re-applies the same setup, but the ISO
+no longer depends on it succeeding.
+
+`ollama` is installed from the package list (`/usr/bin/ollama`).
+`openclaw` is staged only when a built binary is available
+(`MENTALOS_OPENCLAW_BINARY=/path/to/openclaw`, or
+`openclaw/target/release/openclaw` in the repo root); when absent,
+`openclaw.service` is cleanly skipped via `ConditionPathExists`.
+

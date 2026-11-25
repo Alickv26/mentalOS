@@ -5,3 +5,4 @@ mentalOS-prototype/.env.*
 *.log
 .DS_Store
 phase1/iso/work/
+phase1/iso/out/

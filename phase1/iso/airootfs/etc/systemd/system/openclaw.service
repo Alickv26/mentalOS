@@ -3,6 +3,10 @@ Description=OpenClaw AI gateway (HTTP backend for mentalOS)
 Documentation=https://github.com/Alickv26/mentalOS
 After=network-online.target
 Wants=network-online.target
+# The openclaw binary is staged into the image only when it has been built
+# (build-iso.sh: MENTALOS_OPENCLAW_BINARY or openclaw/target/release/openclaw).
+# Skip cleanly instead of failing when it is absent.
+ConditionPathExists=/usr/local/bin/openclaw
 
 [Service]
 Type=simple

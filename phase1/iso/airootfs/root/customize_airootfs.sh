@@ -7,11 +7,16 @@ set -uo pipefail  # NOT -e: one failing systemctl enable shouldn't abort the who
 # build. It customizes the live rootfs before the squashfs image is
 # created.
 #
+# NOTE (archiso v86+): customize_airootfs.sh is deprecated upstream but still
+# supported. The critical enablement work is now ALSO committed to the
+# airootfs overlay (getty autologin drop-in, target .wants symlinks, sysusers
+# and tmpfiles fragments), so the ISO boots correctly even if this script
+# fails. This script now handles: branding, root password, home directory
+# setup and kernel normalization.
+#
 # Robustness rules:
-#   1. Critical user-facing features (autologin, sway config) come FIRST
-#      so they survive even if later steps fail.
-#   2. Every non-critical step uses `|| true` or explicit error handling.
-#   3. We write a marker file + log so the booted system can be diagnosed.
+#   1. Every step uses `|| log WARN` or explicit error handling.
+#   2. We write a marker file + log so the booted system can be diagnosed.
 
 MARKER=/etc/mentalos-build-info
 LOG=/var/log/mentalos-customize.log
@@ -24,10 +29,56 @@ log "=== mentalOS customize_airootfs starting at $(date -u +%Y-%m-%dT%H:%M:%SZ) 
 
 # Record what version of the script ran (for diagnostics)
 cat > "${MARKER}" <<MARKER
-customize_version=2
+customize_version=3
 built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 MARKER
 chmod 0644 "${MARKER}"
+
+# ══════════════════════════════════════════════════════════════════
+# SECTION 0: mentalOS branding (fixes "Manjaro Linux" banner when the
+# build host is Manjaro — packages come from the host's mirrorlist).
+# These files cannot live in the airootfs overlay because the
+# `filesystem` package would conflict with them during pacstrap.
+# ══════════════════════════════════════════════════════════════════
+
+log "Section 0: mentalOS branding (os-release, issue, hostname)"
+
+printf 'mentalos\n' > /etc/hostname || log "  WARN: hostname write failed"
+
+# /etc/os-release: /etc may hold a symlink to /usr/lib/os-release (Arch).
+# Writing through it updates the real file; then sync the other location.
+cat > /etc/os-release <<OSRELEASE || log "  WARN: os-release write failed"
+NAME="mentalOS"
+PRETTY_NAME="mentalOS 0.1.0 (Phase 1)"
+ID=mentalos
+BUILD_ID=rolling
+ANSI_COLOR="1;35"
+HOME_URL="https://github.com/Alickv26/mentalOS"
+IMAGE_ID=mentalos
+IMAGE_VERSION=0.1.0
+OSRELEASE
+cp -f /etc/os-release /usr/lib/os-release 2>/dev/null || true
+
+printf 'mentalOS 0.1.0 - Phase 1 live environment (\\n \\l)\n\n' > /etc/issue || log "  WARN: issue write failed"
+printf 'mentalOS 0.1.0\n' > /etc/issue.net 2>/dev/null || true
+
+# Make sure the hostname resolves locally.
+if [[ -f /etc/hosts ]] && ! grep -q 'mentalos' /etc/hosts; then
+  printf '127.0.1.1\tmentalos\n' >> /etc/hosts || true
+fi
+
+cat > /etc/motd <<MOTD || true
+
+  mentalOS 0.1.0 - Phase 1 live environment
+
+  AI-first desktop assistant (OpenClaw / Ollama / DeepSeek / OpenCode Zen)
+
+  Services:  systemctl status mentalOS openclaw ollama workspace-monitor
+  Diagnose:  mentalos-diagnose
+  Install:   mentalos-install --help
+
+MOTD
+log "  Branding written (os-release, issue, hostname, motd)"
 
 # ══════════════════════════════════════════════════════════════════
 # SECTION 1: CRITICAL user-facing features (must succeed)
@@ -73,8 +124,10 @@ mkdir -p /etc/sudoers.d
 printf '%%wheel ALL=(ALL:ALL) ALL\n' > /etc/sudoers.d/10-wheel
 chmod 0440 /etc/sudoers.d/10-wheel
 
-log "Section 1: Getty autologin override (CRITICAL — user must reach shell)"
+log "Section 1: Getty autologin override"
 
+# The override.conf drop-in is now committed in the airootfs overlay.
+# Rewrite it here as a redundant safety net (idempotent).
 mkdir -p /etc/systemd/system/getty@tty1.service.d
 cat > /etc/systemd/system/getty@tty1.service.d/override.conf <<OVERRIDE
 [Service]
@@ -166,8 +219,8 @@ enable_service "mentalOS.service" "graphical.target" || true
 
 log "Section 3: Service users and directories"
 
-# Create the ollama system user and data directory.
-# ollama.service runs as User=ollama and writes to /var/lib/ollama.
+# The ollama package ships its own sysusers fragment on Arch; create the
+# user here as a fallback for hosts where it does not (idempotent).
 if ! id -u ollama >/dev/null 2>&1; then
   useradd -r -s /usr/sbin/nologin -d /var/lib/ollama ollama || log "  WARN: ollama useradd failed"
 fi

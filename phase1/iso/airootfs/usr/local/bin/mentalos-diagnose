@@ -33,9 +33,11 @@ section "Build info marker"
 if [[ -f /etc/mentalos-build-info ]]; then
     ok "Marker file present"
     cat /etc/mentalos-build-info
-    # Check customize script version (v1 = old script without services)
-    if grep -q "customize_version=2" /etc/mentalos-build-info; then
-        ok "Customize script version 2 (has systemd services)"
+    # Check customize script version (v1/v2 = old scripts)
+    if grep -q "customize_version=3" /etc/mentalos-build-info; then
+        ok "Customize script version 3 (overlay enablement + branding)"
+    elif grep -q "customize_version=2" /etc/mentalos-build-info; then
+        warn "Customize script version 2 (older; enablement only via script)"
     else
         fail "OLD customize script (version 1) — no systemd services"
         echo "  → You're running an ISO built from a commit BEFORE Milestone 1.5"
@@ -44,6 +46,8 @@ if [[ -f /etc/mentalos-build-info ]]; then
 else
     fail "Marker file /etc/mentalos-build-info missing"
     echo "  → customize_airootfs.sh either didn't run or is from an old commit"
+    echo "  → NOTE: service enablement no longer depends on it (committed"
+    echo "    .wants symlinks), so services may still be healthy — check below."
 fi
 
 if [[ -f /var/log/mentalos-customize.log ]]; then

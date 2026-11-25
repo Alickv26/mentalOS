@@ -50,12 +50,25 @@ required_files=(
     "airootfs/etc/systemd/system/openclaw.service"
     "airootfs/etc/systemd/system/ollama.service"
     "airootfs/etc/systemd/system/workspace-monitor.service"
+    "airootfs/etc/systemd/system/getty@tty1.service.d/override.conf"
+    "airootfs/usr/lib/sysusers.d/mentalos.conf"
+    "airootfs/usr/lib/tmpfiles.d/mentalos.conf"
+    "airootfs/etc/skel/.config/sway/config"
     "build-iso.sh"
     "test-qemu.sh"
     "efiboot/loader/loader.conf"
     "efiboot/loader/entries/01-mentalos-linux.conf"
     "syslinux/syslinux.cfg"
     "syslinux/syslinux-linux.cfg"
+)
+
+# Enablement symlinks: services must be enabled via committed .wants
+# symlinks so they start even if customize_airootfs.sh fails.
+required_symlinks=(
+    "airootfs/etc/systemd/system/graphical.target.wants/mentalOS.service"
+    "airootfs/etc/systemd/system/multi-user.target.wants/openclaw.service"
+    "airootfs/etc/systemd/system/multi-user.target.wants/ollama.service"
+    "airootfs/etc/systemd/system/multi-user.target.wants/workspace-monitor.service"
 )
 
 # Note: mentalos-workspace-monitor binary is NOT in the airootfs tree —
@@ -69,6 +82,14 @@ for f in "${required_files[@]}"; do
         ok "${f}"
     else
         err "missing required file: ${f}"
+    fi
+done
+
+for link in "${required_symlinks[@]}"; do
+    if [[ -L "${PROFILE_DIR}/${link}" && -e "${PROFILE_DIR}/${link}" ]]; then
+        ok "${link} (enablement symlink)"
+    else
+        err "missing or broken enablement symlink: ${link}"
     fi
 done
 
@@ -129,6 +150,19 @@ if [[ -f "${PROFILEDEF}" ]]; then
     else
         err "profiledef.sh missing file_permissions array"
     fi
+
+    # squashfs compression must use the real archiso variable
+    if grep -q "^airootfs_image_tool_options=" "${PROFILEDEF}"; then
+        ok "profiledef.sh sets airootfs_image_tool_options"
+    else
+        err "profiledef.sh missing airootfs_image_tool_options (squashfs options)"
+    fi
+
+    if grep -qE '^compression=' "${PROFILEDEF}"; then
+        err "profiledef.sh sets bogus 'compression=' (not an archiso variable)"
+    else
+        ok "profiledef.sh has no bogus compression variable"
+    fi
 fi
 
 # ─── packages.x86_64 ────────────────────────────────────────
@@ -168,7 +202,7 @@ if [[ -f "${PKGS}" ]]; then
     done
 
     # Check for mentalOS-specific packages
-    for pkg in gtk4 sway firejail; do
+    for pkg in gtk4 sway firejail ollama; do
         if grep -qx "${pkg}" "${PKGS}"; then
             ok "packages.x86_64 includes ${pkg}"
         else
@@ -338,6 +372,60 @@ for svc_name in openclaw ollama workspace-monitor; do
     fi
 done
 
+# ollama comes from the package list — its ExecStart must match the package path
+OLLAMA_SVC="${PROFILE_DIR}/airootfs/etc/systemd/system/ollama.service"
+if [[ -f "${OLLAMA_SVC}" ]]; then
+    if grep -q '^ExecStart=/usr/bin/ollama serve' "${OLLAMA_SVC}"; then
+        ok "ollama.service ExecStart points at /usr/bin/ollama (package path)"
+    else
+        err "ollama.service ExecStart should be /usr/bin/ollama serve"
+    fi
+    if grep -q '^ConditionPathExists=/usr/bin/ollama' "${OLLAMA_SVC}"; then
+        ok "ollama.service has graceful skip condition"
+    else
+        err "ollama.service missing ConditionPathExists=/usr/bin/ollama"
+    fi
+fi
+
+# openclaw is staged optionally — the unit must skip cleanly when absent
+OPENCLAW_SVC="${PROFILE_DIR}/airootfs/etc/systemd/system/openclaw.service"
+if [[ -f "${OPENCLAW_SVC}" ]]; then
+    if grep -q '^ConditionPathExists=/usr/local/bin/openclaw' "${OPENCLAW_SVC}"; then
+        ok "openclaw.service has graceful skip condition"
+    else
+        err "openclaw.service missing ConditionPathExists=/usr/local/bin/openclaw"
+    fi
+fi
+
+# getty autologin must be committed to the overlay (not only written by
+# customize_airootfs.sh, which is deprecated upstream)
+GETTY_OVERRIDE="${PROFILE_DIR}/airootfs/etc/systemd/system/getty@tty1.service.d/override.conf"
+if [[ -f "${GETTY_OVERRIDE}" ]]; then
+    if grep -q '^ExecStart=-/usr/bin/agetty --autologin user' "${GETTY_OVERRIDE}"; then
+        ok "getty override.conf enables autologin for user"
+    else
+        err "getty override.conf should autologin user"
+    fi
+fi
+
+# sysusers/tmpfiles fragments must be valid (one 'u'/'d' line each at minimum)
+SYSUSERS="${PROFILE_DIR}/airootfs/usr/lib/sysusers.d/mentalos.conf"
+if [[ -f "${SYSUSERS}" ]]; then
+    if grep -qE '^u +user ' "${SYSUSERS}"; then
+        ok "sysusers.d/mentalos.conf creates user"
+    else
+        err "sysusers.d/mentalos.conf should create user"
+    fi
+fi
+TMPFILES="${PROFILE_DIR}/airootfs/usr/lib/tmpfiles.d/mentalos.conf"
+if [[ -f "${TMPFILES}" ]]; then
+    if grep -qE '^d /var/lib/mentalOS ' "${TMPFILES}"; then
+        ok "tmpfiles.d/mentalos.conf creates /var/lib/mentalOS"
+    else
+        err "tmpfiles.d/mentalos.conf should create /var/lib/mentalOS"
+    fi
+fi
+
 # Check that customize_airootfs.sh enables all 4 services
 # (either via direct systemctl enable or via the enable_service helper)
 CUSTOMIZE="${PROFILE_DIR}/airootfs/root/customize_airootfs.sh"
@@ -349,6 +437,20 @@ if [[ -f "${CUSTOMIZE}" ]]; then
             err "customize_airootfs.sh should enable ${svc}.service"
         fi
     done
+
+    # Branding: the customize script must override os-release so the image
+    # does not boot as "Manjaro Linux" when built on a Manjaro host.
+    if grep -q 'PRETTY_NAME="mentalOS' "${CUSTOMIZE}"; then
+        ok "customize_airootfs.sh brands os-release as mentalOS"
+    else
+        err "customize_airootfs.sh should write mentalOS os-release branding"
+    fi
+
+    if grep -q 'customize_version=3' "${CUSTOMIZE}"; then
+        ok "customize_airootfs.sh is version 3 (overlay enablement + branding)"
+    else
+        err "customize_airootfs.sh should be version 3"
+    fi
 fi
 
 # ─── Shell scripts syntax ────────────────────────────────────

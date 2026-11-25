@@ -45,6 +45,7 @@ required_files=(
     "airootfs/root/customize_airootfs.sh"
     "airootfs/usr/local/bin/mentalos-install"
     "airootfs/usr/local/bin/mentalos-launch"
+    "airootfs/usr/local/bin/mentalos-diagnose"
     "airootfs/etc/systemd/system/mentalOS.service"
     "airootfs/etc/systemd/system/openclaw.service"
     "airootfs/etc/systemd/system/ollama.service"
@@ -338,10 +339,11 @@ for svc_name in openclaw ollama workspace-monitor; do
 done
 
 # Check that customize_airootfs.sh enables all 4 services
+# (either via direct systemctl enable or via the enable_service helper)
 CUSTOMIZE="${PROFILE_DIR}/airootfs/root/customize_airootfs.sh"
 if [[ -f "${CUSTOMIZE}" ]]; then
     for svc in mentalOS openclaw ollama workspace-monitor; do
-        if grep -q "systemctl enable ${svc}.service" "${CUSTOMIZE}"; then
+        if grep -q "enable_service.*${svc}.service\|systemctl enable.*${svc}.service" "${CUSTOMIZE}"; then
             ok "customize_airootfs.sh enables ${svc}.service"
         else
             err "customize_airootfs.sh should enable ${svc}.service"
@@ -358,6 +360,7 @@ shell_scripts=(
     "airootfs/root/customize_airootfs.sh"
     "airootfs/usr/local/bin/mentalos-install"
     "airootfs/usr/local/bin/mentalos-launch"
+    "airootfs/usr/local/bin/mentalos-diagnose"
     "build-iso.sh"
     "test-qemu.sh"
     "validate-profile.sh"

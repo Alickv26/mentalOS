@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# mentalOS live ISO diagnostic script.
+#
+# Run this INSIDE the booted live ISO to check what went wrong.
+# Usage: mentalos-diagnose
+#
+# This script checks:
+#   1. Did customize_airootfs.sh run? (marker file + log)
+#   2. Are the systemd service files present?
+#   3. Are the service symlinks created?
+#   4. Are the binaries staged?
+#   5. Are the service users/dirs created?
+
+set -uo pipefail
+
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+ok()   { printf "  ${GREEN}OK${NC}   %s\n" "$1"; }
+fail() { printf "  ${RED}FAIL${NC} %s\n" "$1"; }
+warn() { printf "  ${YELLOW}WARN${NC} %s\n" "$1"; }
+section() { printf "\n\033[1m=== %s ===\033[0m\n" "$1"; }
+
+echo "mentalOS live ISO diagnostics"
+echo "=============================="
+
+# ─── 1. Build info ──────────────────────────────────────────
+
+section "Build info marker"
+
+if [[ -f /etc/mentalos-build-info ]]; then
+    ok "Marker file present"
+    cat /etc/mentalos-build-info
+    # Check customize script version (v1 = old script without services)
+    if grep -q "customize_version=2" /etc/mentalos-build-info; then
+        ok "Customize script version 2 (has systemd services)"
+    else
+        fail "OLD customize script (version 1) — no systemd services"
+        echo "  → You're running an ISO built from a commit BEFORE Milestone 1.5"
+        echo "  → Pull the latest code and rebuild: git pull && cd phase1/iso && ./build-iso.sh"
+    fi
+else
+    fail "Marker file /etc/mentalos-build-info missing"
+    echo "  → customize_airootfs.sh either didn't run or is from an old commit"
+fi
+
+if [[ -f /var/log/mentalos-customize.log ]]; then
+    ok "Customize log present at /var/log/mentalos-customize.log"
+    echo "  Last 10 lines:"
+    tail -10 /var/log/mentalos-customize.log | sed 's/^/    /'
+else
+    warn "No customize log (older script version)"
+fi
+
+# ─── 2. Systemd service files ──────────────────────────────
+
+section "Systemd service unit files"
+
+for svc in mentalOS openclaw ollama workspace-monitor; do
+    if [[ -f "/etc/systemd/system/${svc}.service" ]]; then
+        ok "/etc/systemd/system/${svc}.service exists"
+    else
+        fail "/etc/systemd/system/${svc}.service MISSING"
+    fi
+done
+
+# ─── 3. Service symlinks ───────────────────────────────────
+
+section "Service enablement symlinks"
+
+for target in multi-user.target graphical.target; do
+    wants_dir="/etc/systemd/system/${target}.wants"
+    if [[ -d "${wants_dir}" ]]; then
+        # shellcheck disable=SC2012  # ls is intentional — we want a simple name list
+        local_links=$(ls "${wants_dir}" 2>/dev/null | tr '\n' ' ')
+        if [[ -n "${local_links}" ]]; then
+            ok "${target}.wants contains: ${local_links}"
+        else
+            warn "${target}.wants is empty (no services enabled for this target)"
+        fi
+    else
+        warn "${wants_dir} does not exist"
+    fi
+done
+
+# ─── 4. Binaries ───────────────────────────────────────────
+
+section "Staged binaries in /usr/local/bin"
+
+for bin_name in mentalOS mentalos-workspace-monitor mentalos-install mentalos-launch; do
+    if [[ -x "/usr/local/bin/${bin_name}" ]]; then
+        ok "/usr/local/bin/${bin_name} is executable"
+    elif [[ -f "/usr/local/bin/${bin_name}" ]]; then
+        warn "/usr/local/bin/${bin_name} exists but is not executable"
+    else
+        fail "/usr/local/bin/${bin_name} MISSING"
+    fi
+done
+
+echo ""
+# shellcheck disable=SC2012  # ls -la is intentional — we want permissions + ownership
+ls -la /usr/local/bin/ 2>/dev/null | head -10
+
+# ─── 5. Users and directories ──────────────────────────────
+
+section "Service users and directories"
+
+if id -u user >/dev/null 2>&1; then
+    ok "User 'user' exists"
+else
+    fail "User 'user' missing"
+fi
+
+if id -u ollama >/dev/null 2>&1; then
+    ok "User 'ollama' exists"
+else
+    fail "User 'ollama' missing (ollama.service won't start)"
+fi
+
+if [[ -d /var/lib/ollama ]]; then
+    ok "/var/lib/ollama exists"
+else
+    fail "/var/lib/ollama missing"
+fi
+
+if [[ -d /var/lib/mentalOS ]]; then
+    ok "/var/lib/mentalOS exists"
+else
+    fail "/var/lib/mentalOS missing"
+fi
+
+if [[ -d /home/user/workspaces/.mentalOS ]]; then
+    ok "/home/user/workspaces/.mentalOS exists"
+else
+    fail "/home/user/workspaces/.mentalOS missing"
+fi
+
+# ─── 6. Running services ───────────────────────────────────
+
+section "Running service status"
+
+for svc in mentalOS openclaw ollama workspace-monitor; do
+    status=$(systemctl is-active "${svc}.service" 2>/dev/null || echo "unknown")
+    if [[ "${status}" == "active" ]]; then
+        ok "${svc}.service is active"
+    else
+        warn "${svc}.service status: ${status}"
+        # Show the journal for failing services
+        if [[ "${status}" == "failed" ]]; then
+            echo "  Journal (last 5 lines):"
+            journalctl -u "${svc}.service" -n 5 --no-pager 2>/dev/null | sed 's/^/    /' || true
+        fi
+    fi
+done
+
+# ─── 7. Summary ────────────────────────────────────────────
+
+section "Summary + likely fixes"
+
+echo ""
+if [[ ! -f /etc/mentalos-build-info ]]; then
+    echo "DIAGNOSIS: Your ISO was built from an OLD commit (before Milestone 1.5)."
+    echo ""
+    echo "FIX: Pull the latest code and rebuild:"
+    echo "  cd /path/to/mentalOS"
+    echo "  git pull"
+    echo "  git log --oneline -3   # should show 84ece0c or later"
+    echo "  cd phase1/iso"
+    echo "  ./build-iso.sh         # now includes post-build verification"
+    echo "  ./test-qemu.sh"
+elif [[ ! -f /etc/systemd/system/mentalOS.service ]]; then
+    echo "DIAGNOSIS: customize_airootfs.sh ran but the service files didn't"
+    echo "make it into the squashfs. This is a mkarchiso airootfs overlay issue."
+    echo ""
+    echo "Check the build log for errors:"
+    echo "  grep -i 'error\|fail\|warn' /var/log/mentalos-customize.log"
+else
+    echo "All core components look present. If services aren't running,"
+    echo "check their journals:"
+    echo "  journalctl -u mentalOS.service -n 20 --no-pager"
+    echo "  journalctl -u openclaw.service -n 20 --no-pager"
+    echo "  journalctl -u workspace-monitor.service -n 20 --no-pager"
+fi

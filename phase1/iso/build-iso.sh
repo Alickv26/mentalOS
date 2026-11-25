@@ -121,6 +121,84 @@ build_iso() {
   sudo mkarchiso -v -w "${WORK_DIR}" -o "${OUT_DIR}" "${PROFILE_DIR}"
 }
 
+# Post-build verification: check that the squashfs contains the expected
+# files. This catches cases where the airootfs overlay or customize script
+# failed silently.
+verify_build() {
+  local iso_file
+  # shellcheck disable=SC2012  # ls -1t is intentional — we want the most recently-built ISO
+  iso_file="$(ls -1t "${OUT_DIR}"/*.iso 2>/dev/null | head -n 1 || true)"
+  if [[ -z "${iso_file}" ]]; then
+    echo "[build-iso] ERROR: No ISO file found in ${OUT_DIR}" >&2
+    exit 1
+  fi
+
+  log "Verifying ISO: ${iso_file}"
+
+  # Check that the squashfs in the ISO contains our key files.
+  # We use unsquashfs to list the contents and grep for expected paths.
+  local squashfs_path="/arch/x86_64/airootfs.sfs"
+
+  # Mount the ISO to extract the squashfs
+  local mount_dir
+  mount_dir="$(mktemp -d)"
+  if ! sudo mount -o loop "${iso_file}" "${mount_dir}" 2>/dev/null; then
+    echo "[build-iso] WARN: Could not mount ISO for verification (loop device issue?)"
+    echo "[build-iso] Skipping detailed verification."
+    return 0
+  fi
+
+  local squashfs_file="${mount_dir}${squashfs_path}"
+  if [[ ! -f "${squashfs_file}" ]]; then
+    echo "[build-iso] WARN: squashfs not found at ${squashfs_path} in ISO"
+    sudo umount "${mount_dir}" 2>/dev/null || true
+    rmdir "${mount_dir}" 2>/dev/null || true
+    return 0
+  fi
+
+  local errors=0
+
+  # List squashfs contents and check for required files
+  local listing
+  listing="$(sudo unsquashfs -l "${squashfs_file}" 2>/dev/null || echo "")"
+
+  check_in_squashfs() {
+    local path="$1"
+    if echo "${listing}" | grep -q "${path}"; then
+      log "  OK: ${path} found in squashfs"
+    else
+      echo "[build-iso] ERROR: ${path} NOT found in squashfs!" >&2
+      errors=$((errors + 1))
+    fi
+  }
+
+  check_in_squashfs "etc/systemd/system/mentalOS.service"
+  check_in_squashfs "etc/systemd/system/openclaw.service"
+  check_in_squashfs "etc/systemd/system/ollama.service"
+  check_in_squashfs "etc/systemd/system/workspace-monitor.service"
+  check_in_squashfs "usr/local/bin/mentalOS"
+  check_in_squashfs "usr/local/bin/mentalos-workspace-monitor"
+  check_in_squashfs "etc/systemd/system/getty@tty1.service.d/override.conf"
+  check_in_squashfs "etc/mentalos-build-info"
+
+  sudo umount "${mount_dir}" 2>/dev/null || true
+  rmdir "${mount_dir}" 2>/dev/null || true
+
+  if [[ ${errors} -gt 0 ]]; then
+    echo "" >&2
+    echo "[build-iso] VERIFICATION FAILED: ${errors} expected files missing from the ISO." >&2
+    echo "[build-iso] The ISO was built but is missing critical components." >&2
+    echo "[build-iso] Likely causes:" >&2
+    echo "[build-iso]   1. The airootfs overlay didn't get applied" >&2
+    echo "[build-iso]   2. customize_airootfs.sh failed during build" >&2
+    echo "[build-iso]   3. You're building from an older commit" >&2
+    echo "[build-iso] Check: git log --oneline -3 (should show 84ece0c or later)" >&2
+    exit 1
+  else
+    log "Verification passed: all expected files present in squashfs"
+  fi
+}
+
 main() {
   trap cleanup_stage EXIT
   require_tools
@@ -128,6 +206,7 @@ main() {
   stage_binary
   stage_installer_assets
   build_iso
+  verify_build
   log "ISO build complete. Output files:"
   ls -lh "${OUT_DIR}"/*.iso
 }
